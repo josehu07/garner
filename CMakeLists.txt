@@ -12,4 +12,4 @@ add_subdirectory(clients)
 enable_testing()
 add_test(
     NAME FuzzyTest
-    COMMAND $<TARGET_FILE:fuzzy_test> -f /tmp/garner_fuzzy_test_temp.txt)
+    COMMAND $<TARGET_FILE:fuzzy_test>)

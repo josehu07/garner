@@ -2,8 +2,6 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
-#include <filesystem>
-#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <map>
@@ -26,7 +24,7 @@ class FuzzyTestException : public std::exception {
     const char* what() const noexcept override { return what_msg.c_str(); }
 };
 
-static void fuzzy_test_round(const std::string& filename, bool do_puts) {
+static void fuzzy_test_round(bool do_puts) {
     constexpr size_t TEST_DEGREE = 6;
     constexpr uint64_t MAX_KEY = 1200;
     constexpr size_t NUM_FOUND_GETS = 15;
@@ -35,8 +33,7 @@ static void fuzzy_test_round(const std::string& filename, bool do_puts) {
     constexpr size_t NUM_NORMAL_SCANS = 7;
     constexpr size_t NUM_HUGE_SCANS = 3;
 
-    std::filesystem::remove(filename);
-    auto* garner = garner::Garner::Open(filename, TEST_DEGREE);
+    auto* garner = garner::Garner::Open(TEST_DEGREE);
 
     std::srand(std::time(NULL));
     std::random_device rd;
@@ -179,22 +176,12 @@ static void fuzzy_test_round(const std::string& filename, bool do_puts) {
     std::cout << " Fuzzy tests passed!" << std::endl;
 }
 
-static void fuzzy_tests(const std::string& filename) {
-    for (unsigned round = 0; round < 10; ++round) {
-        std::cout << "Round " << round << " --" << std::endl;
-        fuzzy_test_round(filename, round != 0);
-    }
-}
-
 int main(int argc, char* argv[]) {
     bool help;
-    std::string file;
 
     cxxopts::Options cmd_args(argv[0]);
     cmd_args.add_options()("h,help", "print help message",
-                           cxxopts::value<bool>(help)->default_value("false"))(
-        "f,file", "backing file",
-        cxxopts::value<std::string>(file)->default_value(""));
+                           cxxopts::value<bool>(help)->default_value("false"));
     auto result = cmd_args.parse(argc, argv);
 
     if (help) {
@@ -202,13 +189,10 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    if (file.length() == 0) {
-        std::cerr << "Error: backing file path is empty" << std::endl;
-        printf("%s", cmd_args.help().c_str());
-        return 1;
+    for (unsigned round = 0; round < 10; ++round) {
+        std::cout << "Round " << round << " --" << std::endl;
+        fuzzy_test_round(round != 0);
     }
-
-    fuzzy_tests(file);
 
     return 0;
 }

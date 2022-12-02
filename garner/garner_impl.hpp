@@ -22,7 +22,7 @@ class GarnerImpl : public Garner {
     // TODO: finish this struct
 
    public:
-    GarnerImpl(const std::string& bptree_backfile, size_t degree);
+    GarnerImpl(size_t degree);
 
     GarnerImpl(const GarnerImpl&) = delete;
     GarnerImpl& operator=(const GarnerImpl&) = delete;

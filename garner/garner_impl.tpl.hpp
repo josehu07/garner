@@ -4,8 +4,8 @@
 
 namespace garner {
 
-GarnerImpl::GarnerImpl(const std::string& bptree_backfile, size_t degree) {
-    bptree = new BPTree<KType, VType>(bptree_backfile, degree);
+GarnerImpl::GarnerImpl(size_t degree) {
+    bptree = new BPTree<KType, VType>(degree);
     if (bptree == nullptr)
         throw GarnerException("failed to allocate BPtree instance");
 }

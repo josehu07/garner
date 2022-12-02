@@ -39,16 +39,12 @@ static std::tuple<std::vector<GarnerReq>, size_t> read_input_trace(
             degree = key;
             continue;
         }
-        GarnerOp op =
-            (opcode == "GET")
-                ? GET
-                : (opcode == "PUT")
-                      ? PUT
-                      : (opcode == "DELETE")
-                            ? DELETE
-                            : (opcode == "SCAN")
-                                  ? SCAN
-                                  : (opcode == "LOAD") ? LOAD : UNKNOWN;
+        GarnerOp op = (opcode == "GET")      ? GET
+                      : (opcode == "PUT")    ? PUT
+                      : (opcode == "DELETE") ? DELETE
+                      : (opcode == "SCAN")   ? SCAN
+                      : (opcode == "LOAD")   ? LOAD
+                                             : UNKNOWN;
         uint64_t rkey = 0;
         if (op == SCAN)
             input >> rkey;
@@ -146,13 +142,11 @@ static void print_results_latency(std::vector<double>& microsecs) {
 
 int main(int argc, char* argv[]) {
     bool help;
-    std::string file, trace;
+    std::string trace;
 
     cxxopts::Options cmd_args(argv[0]);
     cmd_args.add_options()("h,help", "print help message",
                            cxxopts::value<bool>(help)->default_value("false"))(
-        "f,file", "backing file",
-        cxxopts::value<std::string>(file)->default_value(""))(
         "w,workload", "workload trace",
         cxxopts::value<std::string>(trace)->default_value(""));
     auto result = cmd_args.parse(argc, argv);
@@ -162,11 +156,6 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    if (file.length() == 0) {
-        std::cerr << "Error: backing file path is empty" << std::endl;
-        printf("%s", cmd_args.help().c_str());
-        return 1;
-    }
     if (trace.length() == 0) {
         std::cerr << "Error: workload trace is empty" << std::endl;
         printf("%s", cmd_args.help().c_str());
@@ -178,7 +167,7 @@ int main(int argc, char* argv[]) {
     std::tie(reqs, degree) = read_input_trace(trace);
     uint64_t value = 7;
 
-    auto* garner = garner::Garner::Open(file, degree);
+    auto* garner = garner::Garner::Open(degree);
     std::vector<double> microsecs;
     auto [cnt, _] = execute_input_trace(garner, reqs, value, microsecs);
     std::cout << "Finished " << cnt << " requests." << std::endl << std::endl;

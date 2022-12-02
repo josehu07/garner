@@ -22,7 +22,7 @@ class Garner {
      * the interface struct on success and nullptr otherwise.
      * Exceptions might be thrown.
      */
-    static Garner* Open(const std::string& bptree_backfile, size_t degree);
+    static Garner* Open(size_t degree);
 
     Garner() = default;
 
@@ -45,7 +45,7 @@ class Garner {
     virtual bool Get(KType key, VType& value) = 0;
 
     /**
-     * Delete the record mathcing key.
+     * Delete the record matching key.
      * Returns true if key found, otherwise false.
      * Exceptions might be thrown.
      */
@@ -61,7 +61,7 @@ class Garner {
                         std::vector<std::tuple<KType, VType>>& results) = 0;
 
     /**
-     * Scan the whole backing file and print statistics.
+     * Scan the whole B+-tree and print statistics.
      * If print_pages is true, also prints content of all pages.
      */
     virtual void PrintStats(bool print_pages = false) = 0;
