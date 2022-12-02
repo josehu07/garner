@@ -7,3 +7,9 @@ add_subdirectory(garner)
 
 # Client, testing, and benchmarking executables.
 add_subdirectory(clients)
+
+# Tests:
+enable_testing()
+add_test(
+    NAME FuzzyTest
+    COMMAND $<TARGET_FILE:fuzzy_test> -f /tmp/garner_fuzzy_test_temp.txt)
