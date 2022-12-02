@@ -16,7 +16,7 @@ all: release
 
 
 .PHONY: release
-release: CXXFLAGS+=-O3 -DNDEBUG
+release: CXXFLAGS+=-O2 -DNDEBUG
 release: SUBMAKE_TYPE=release
 release: bptcli
 

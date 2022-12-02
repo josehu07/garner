@@ -7,7 +7,7 @@ namespace bptree {
 template <typename K, typename V>
 BPTree<K, V>::BPTree(std::string filename, size_t degree)
     : filename(filename), degree(degree) {
-    // key and value type must be integral within 64-bit width
+    // key and value type must be integral within 64-bit width for now
     static_assert(std::is_unsigned<K>::value, "key must be unsigned integral");
     static_assert(std::is_unsigned<V>::value,
                   "value must be unsigned integral");
@@ -50,7 +50,7 @@ void BPTree<K, V>::ReopenBackingFile(int flags) {
 }
 
 template <typename K, typename V>
-size_t BPTree<K, V>::PageSearchKey(const Page &page, K key) {
+size_t BPTree<K, V>::PageSearchKey(const Page& page, K key) {
     size_t nkeys = page.header.nkeys;
     if (nkeys == 0) return 0;
 
@@ -81,7 +81,7 @@ size_t BPTree<K, V>::PageSearchKey(const Page &page, K key) {
 }
 
 template <typename K, typename V>
-void BPTree<K, V>::LeafPageInject(Page &page, size_t search_idx, K key,
+void BPTree<K, V>::LeafPageInject(Page& page, size_t search_idx, K key,
                                   V value) {
     assert(page.header.nkeys < degree);
     assert(search_idx == 0 || search_idx % 2 == 1);
@@ -123,7 +123,7 @@ void BPTree<K, V>::LeafPageInject(Page &page, size_t search_idx, K key,
 }
 
 template <typename K, typename V>
-void BPTree<K, V>::ItnlPageInject(Page &page, size_t search_idx, K key,
+void BPTree<K, V>::ItnlPageInject(Page& page, size_t search_idx, K key,
                                   uint64_t lpageid, uint64_t rpageid) {
     assert(page.header.nkeys < degree);
     assert(search_idx == 0 || search_idx % 2 == 1);
@@ -207,8 +207,8 @@ std::tuple<std::vector<uint64_t>, size_t> BPTree<K, V>::TraverseToLeaf(K key) {
 }
 
 template <typename K, typename V>
-void BPTree<K, V>::SplitPage(uint64_t pageid, Page &page,
-                             std::vector<uint64_t> &path) {
+void BPTree<K, V>::SplitPage(uint64_t pageid, Page& page,
+                             std::vector<uint64_t>& path) {
     // if spliting root page, need to allocate two pages
     if (page.header.type == PAGE_ROOT) {
         assert(pageid == 0);
@@ -379,7 +379,7 @@ void BPTree<K, V>::Put(K key, V value) {
 }
 
 template <typename K, typename V>
-bool BPTree<K, V>::Get(K key, V &value) {
+bool BPTree<K, V>::Get(K key, V& value) {
     // traverse to the correct leaf node and read
     std::vector<uint64_t> path;
     std::tie(path, std::ignore) = TraverseToLeaf(key);
@@ -408,54 +408,25 @@ bool BPTree<K, V>::Delete(K key) {
 
 template <typename K, typename V>
 size_t BPTree<K, V>::Scan(K lkey, K rkey,
-                          std::vector<std::tuple<K, V>> &results) {
+                          std::vector<std::tuple<K, V>>& results) {
     if (lkey > rkey) return 0;
 
-    // traverse up to leaf node for both bounds of range
-    std::vector<uint64_t> lpath, rpath;
-    size_t litnlidx, ritnlidx;
-    std::tie(lpath, litnlidx) = TraverseToLeaf(lkey);
-    std::tie(rpath, ritnlidx) = TraverseToLeaf(rkey);
-    assert(lpath.size() > 0 && rpath.size() > 0);
-    uint64_t lleafid = lpath.back(), rleafid = rpath.back();
-    uint64_t litnlid = lpath[lpath.size() - 2],
-             ritnlid = rpath[rpath.size() - 2];
+    // traverse to leaf node for left bound of range
+    std::vector<uint64_t> lpath;
+    std::tie(lpath, std::ignore) = TraverseToLeaf(lkey);
+    assert(lpath.size() > 0);
+    uint64_t lleafid = lpath.back();
 
-    // gather all the leaf nodes that should be read out
+    // read out the leaf pages in a loop by following sibling chains,
+    // gathering records in range
     Page page;
-    uint64_t itnlid = litnlid;
-    std::vector<uint64_t> leaves;
-    while (true) {
-        if (!pager->ReadPage(itnlid, &page))
-            throw BPTreeException("failed to read out internal page in scan");
-
-        // gather leaf pageids in sub-range
-        size_t lidx = 0, ridx = page.header.nkeys * 2;
-        if (itnlid == litnlid) {
-            lidx = litnlidx;
-            assert(page.content[lidx] == lleafid);
-        }
-        if (itnlid == ritnlid) {
-            ridx = ritnlidx;
-            assert(page.content[ridx] == rleafid);
-        }
-        for (size_t idx = lidx; idx <= ridx; idx += 2)
-            leaves.push_back(page.content[idx]);
-
-        // stop after processing the right-most internal page, else move on
-        // to next internal page
-        if (itnlid == ritnlid) break;
-
-        itnlid = page.header.next;
-    }
-
-    // read out the leaf pages in a loop, gathering records in range
+    uint64_t leafid = lleafid;
     size_t nrecords = 0;
-    for (uint64_t leafid : leaves) {
+    while (true) {
         if (!pager->ReadPage(leafid, &page))
             throw BPTreeException("failed to read out leaf page in scan");
 
-        // need a search if in boundary leaf page
+        // do a search if in left bound leaf page
         size_t lidx = 1, ridx = page.header.nkeys * 2 - 1;
         if (leafid == lleafid) {
             size_t idx = PageSearchKey(page, lkey);
@@ -466,28 +437,26 @@ size_t BPTree<K, V>::Scan(K lkey, K rkey,
             else
                 lidx = idx + 2;
         }
-        if (leafid == rleafid) {
-            size_t idx = PageSearchKey(page, rkey);
-            if (idx != 0)
-                ridx = idx;
-            else
-                ridx = 0;
-        }
 
-        // gather records within range
+        // gather records within range; watch out for right bound
         for (size_t idx = lidx; idx <= ridx; idx += 2) {
             K key = page.content[idx];
             V value = page.content[idx + 1];
-            results.push_back(std::make_tuple(key, value));
-            nrecords++;
+            if (key <= rkey) {
+                results.push_back(std::make_tuple(key, value));
+                nrecords++;
+            } else
+                return nrecords;
         }
-    }
 
-    return nrecords;
+        // move on to right sibling
+        leafid = page.header.next;
+        if (leafid == 0) return nrecords;
+    }
 }
 
 template <typename K, typename V>
-void BPTree<K, V>::Load(const std::vector<std::tuple<K, V>> &records) {
+void BPTree<K, V>::Load(const std::vector<std::tuple<K, V>>& records) {
     if (records.size() == 0) return;
 
     // only supports bulk-loading on empty B+ tree
@@ -499,11 +468,13 @@ void BPTree<K, V>::Load(const std::vector<std::tuple<K, V>> &records) {
 
     // ensure that the records array is sorted by key in increasing order
     K currkey = std::numeric_limits<K>::min();
-    for (auto &&record : records) {
+    bool firstkey = true;
+    for (auto&& record : records) {
         K key = std::get<0>(record);
-        if (key <= currkey)
+        if (key <= currkey && !firstkey)
             throw BPTreeException("records vector input not valid");
         currkey = key;
+        firstkey = false;
     }
 
     // special case where the root can directly hold all records
@@ -538,7 +509,7 @@ void BPTree<K, V>::Load(const std::vector<std::tuple<K, V>> &records) {
     size_t leafidx = 0, leafpos = 0, itnlpos = 0;
     Page leaf(PAGE_LEAF);
     bool is_first_leaf = true;
-    for (auto &&record : records) {
+    for (auto&& record : records) {
         assert(leafpos < nkeys);
         size_t idx = 1 + leafpos * 2;
         auto [key, value] = record;

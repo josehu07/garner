@@ -37,10 +37,10 @@ class Pager {
     ~Pager();
 
     /** Data I/O on page. */
-    bool ReadPage(uint64_t pageid, void *buf);
-    bool ReadPage(uint64_t pageid, size_t off, size_t len, void *buf);
-    bool WritePage(uint64_t pageid, const void *buf);
-    bool WritePage(uint64_t pageid, size_t off, size_t len, const void *buf);
+    bool ReadPage(uint64_t pageid, void* buf);
+    bool ReadPage(uint64_t pageid, size_t off, size_t len, void* buf);
+    bool WritePage(uint64_t pageid, const void* buf);
+    bool WritePage(uint64_t pageid, size_t off, size_t len, const void* buf);
 
     /** Allocate one new page.*/
     uint64_t AllocPage();
@@ -49,7 +49,7 @@ class Pager {
      * Scan file and gather statistics.
      * If init is true, will initialize the freelist set.
      */
-    void CheckStats(BPTreeStats &stats, bool init = false);
+    void CheckStats(BPTreeStats& stats, bool init = false);
 };
 
 }  // namespace bptree

@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "common.hpp"
+#include "format.hpp"
 #include "pager.hpp"
 
 #pragma once
@@ -38,7 +39,7 @@ class BPTree {
 
     const size_t degree = MAXNKEYS;
 
-    Pager *pager = nullptr;
+    Pager* pager = nullptr;
 
     /** Reopen the backing file with possibly different flags. */
     void ReopenBackingFile(int flags = 0);
@@ -48,20 +49,20 @@ class BPTree {
      * Returns the index to the key in content array, or 0 if all existing
      * keys are greater than given key.
      */
-    size_t PageSearchKey(const Page &page, K key);
+    size_t PageSearchKey(const Page& page, K key);
 
     /**
      * Insert a key-value pair into leaf page, shifting array content if
      * necessary. serach_idx should be calculated through PageSearchKey.
      */
-    void LeafPageInject(Page &page, size_t search_idx, K key, V value);
+    void LeafPageInject(Page& page, size_t search_idx, K key, V value);
 
     /**
      * Insert a key into internal node (carrying its left and right child
      * pageids), shifting array content if necessary. serach_idx should
      * be calculated through PageSearchKey.
      */
-    void ItnlPageInject(Page &page, size_t search_idx, K key, uint64_t lpageid,
+    void ItnlPageInject(Page& page, size_t search_idx, K key, uint64_t lpageid,
                         uint64_t rpageid);
 
     /**
@@ -81,7 +82,7 @@ class BPTree {
      * After this function returns, the path vector will be updated to
      * reflect the new path to the right sibling node.
      */
-    void SplitPage(uint64_t pageid, Page &page, std::vector<uint64_t> &path);
+    void SplitPage(uint64_t pageid, Page& page, std::vector<uint64_t>& path);
 
    public:
     BPTree(std::string filename, size_t degree);
@@ -98,7 +99,7 @@ class BPTree {
      * Returns false if search failed or key not found.
      * Exceptions might be thrown.
      */
-    bool Get(K key, V &value);
+    bool Get(K key, V& value);
 
     /**
      * Delete the record mathcing key.
@@ -113,7 +114,7 @@ class BPTree {
      * Returns the number of records found within range.
      * Exceptions might be thrown.
      */
-    size_t Scan(K lkey, K rkey, std::vector<std::tuple<K, V>> &results);
+    size_t Scan(K lkey, K rkey, std::vector<std::tuple<K, V>>& results);
 
     /**
      * Bulk-load a collection of records into an empty B+ tree instance.
@@ -121,7 +122,7 @@ class BPTree {
      * sorted on key in increasing order and must contain no duplicate
      * keys, otherwise an exception will be thrown.
      */
-    void Load(const std::vector<std::tuple<K, V>> &records);
+    void Load(const std::vector<std::tuple<K, V>>& records);
 
     /**
      * Scan the whole backing file and print statistics.
