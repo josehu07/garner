@@ -1,5 +1,9 @@
 # Garner
 
+[![Format check](https://github.com/josehu07/garner/actions/workflows/format.yml/badge.svg)](https://github.com/josehu07/garner/actions?query=josehu07%3Aformat)
+[![Build & Tests status](https://github.com/josehu07/garner/actions/workflows/build-n-tests.yml/badge.svg)](https://github.com/josehu07/garner/actions?query=josehu07%3Abuild_n_tests)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+
 Hierarchical validation in Silo-flavor OCC on a B+-tree index.
 
 ## Build
