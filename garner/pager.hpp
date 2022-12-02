@@ -16,7 +16,7 @@
 
 #pragma once
 
-namespace bptree {
+namespace garner {
 
 /**
  * Manages free pages of a BPTree backing file. Uses a simple freelist
@@ -52,4 +52,4 @@ class Pager {
     void CheckStats(BPTreeStats& stats, bool init = false);
 };
 
-}  // namespace bptree
+}  // namespace garner

@@ -2,7 +2,7 @@
 
 #include <iostream>
 
-namespace bptree {
+namespace garner {
 
 static inline std::string PageTypeStr(enum PageType type) {
     switch (type) {
@@ -28,4 +28,4 @@ std::ostream& operator<<(std::ostream& s, const Page& page) {
     return s << "]}";
 }
 
-}  // namespace bptree
+}  // namespace garner

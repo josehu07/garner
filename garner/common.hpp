@@ -6,7 +6,7 @@
 
 #pragma once
 
-namespace bptree {
+namespace garner {
 
 /** Exception type. */
 class BPTreeException : public std::exception {
@@ -31,4 +31,4 @@ struct BPTreeStats {
 
 std::ostream& operator<<(std::ostream& s, const BPTreeStats& stats);
 
-}  // namespace bptree
+}  // namespace garner

@@ -1,10 +1,5 @@
 // BPTree -- simple B+ tree class.
 
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <unistd.h>
-
 #include <cassert>
 #include <cstring>
 #include <iostream>
@@ -21,7 +16,7 @@
 
 #pragma once
 
-namespace bptree {
+namespace garner {
 
 /**
  * Single-file backed simple B+ tree. Non thread-safe. Supporting only
@@ -131,7 +126,7 @@ class BPTree {
     void PrintStats(bool print_pages = false);
 };
 
-}  // namespace bptree
+}  // namespace garner
 
 // Include template implementation in-place.
 #include "bptree.tpl.hpp"

@@ -1,6 +1,4 @@
-*.o
-*.so
-bptcli
+build/
+build-debug/
 
 .vscode/
-

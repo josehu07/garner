@@ -4,7 +4,7 @@
 
 #pragma once
 
-namespace bptree {
+namespace garner {
 
 /** Page size. */
 constexpr size_t BLKSIZE = 8192;
@@ -53,4 +53,4 @@ static_assert(sizeof(Page) == BLKSIZE);
 
 std::ostream& operator<<(std::ostream& s, const Page& stats);
 
-}  // namespace bptree
+}  // namespace garner

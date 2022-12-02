@@ -15,7 +15,7 @@
 #include "common.hpp"
 #include "format.hpp"
 
-namespace bptree {
+namespace garner {
 
 Pager::Pager(int fd, size_t degree) : fd(fd), degree(degree) {
     assert(fd > 0);
@@ -155,4 +155,4 @@ void Pager::CheckStats(BPTreeStats& stats, bool init) {
     }
 }
 
-}  // namespace bptree
+}  // namespace garner

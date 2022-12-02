@@ -2,7 +2,7 @@
 
 #pragma once
 
-namespace bptree {
+namespace garner {
 
 template <typename K, typename V>
 BPTree<K, V>::BPTree(std::string filename, size_t degree)
@@ -594,4 +594,4 @@ void BPTree<K, V>::PrintStats(bool print_pages) {
     }
 }
 
-}  // namespace bptree
+}  // namespace garner

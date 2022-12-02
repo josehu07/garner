@@ -4,7 +4,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace bptree {
+namespace garner {
 
 std::ostream& operator<<(std::ostream& s, const BPTreeStats& stats) {
     return s << "BPTreeStats{npages=" << stats.npages
@@ -15,4 +15,4 @@ std::ostream& operator<<(std::ostream& s, const BPTreeStats& stats) {
              << ",nkeys_leaf=" << stats.nkeys_leaf << "}";
 }
 
-}  // namespace bptree
+}  // namespace garner
