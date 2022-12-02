@@ -5,7 +5,7 @@
 namespace garner {
 
 template <typename K, typename V>
-BPTree<K, V>::BPTree(std::string filename, size_t degree)
+BPTree<K, V>::BPTree(const std::string& filename, size_t degree)
     : filename(filename), degree(degree) {
     // key and value type must be integral within 64-bit width for now
     static_assert(std::is_unsigned<K>::value, "key must be unsigned integral");
@@ -18,14 +18,14 @@ BPTree<K, V>::BPTree(std::string filename, size_t degree)
 
     // degree must be between [2, MAXNKEYS]
     if (degree < 2 || degree > MAXNKEYS) {
-        throw BPTreeException("invalid degree parameter " +
+        throw GarnerException("invalid degree parameter " +
                               std::to_string(degree));
     }
 
     // open the backing file
     fd = open(filename.c_str(), O_CREAT | O_RDWR,
               S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-    if (fd <= 0) throw BPTreeException("failed to open backing file");
+    if (fd <= 0) throw GarnerException("failed to open backing file");
 
     // initialize pager
     pager = new Pager(fd, degree);
@@ -44,7 +44,7 @@ void BPTree<K, V>::ReopenBackingFile(int flags) {
     close(fd);
 
     fd = open(filename.c_str(), flags | O_RDWR);
-    if (fd <= 0) throw BPTreeException("failed to re-open backing file");
+    if (fd <= 0) throw GarnerException("failed to re-open backing file");
 
     pager->fd = fd;
 }
@@ -132,7 +132,7 @@ void BPTree<K, V>::ItnlPageInject(Page& page, size_t search_idx, K key,
     if (search_idx > 0) {
         size_t search_pos = (search_idx - 1) / 2;
         if (search_pos < page.header.nkeys && page.content[search_idx] == key)
-            throw BPTreeException("duplicate internal node keys detected");
+            throw GarnerException("duplicate internal node keys detected");
     }
 
     // shift any array content with larger key to the right
@@ -156,7 +156,7 @@ void BPTree<K, V>::ItnlPageInject(Page& page, size_t search_idx, K key,
 
     // the pageid to the left of inject slot must be equal to left child
     if (page.content[inject_idx - 1] != lpageid)
-        throw BPTreeException("left child pageid does not match");
+        throw GarnerException("left child pageid does not match");
 
     // inject key and pageid to its slot
     page.content[inject_idx] = key;
@@ -177,7 +177,7 @@ std::tuple<std::vector<uint64_t>, size_t> BPTree<K, V>::TraverseToLeaf(K key) {
     while (true) {
         path.push_back(pageid);
         if (!pager->ReadPage(pageid, &page))
-            throw BPTreeException("failed to read internal page");
+            throw GarnerException("failed to read internal page");
 
         // if at root page, read out depth of tree
         if (level == 0) {
@@ -194,7 +194,7 @@ std::tuple<std::vector<uint64_t>, size_t> BPTree<K, V>::TraverseToLeaf(K key) {
 
         // fetch the correct child node pageid
         uint64_t childid = page.content[idx];
-        if (childid == 0) throw BPTreeException("got 0 as child node pageid");
+        if (childid == 0) throw GarnerException("got 0 as child node pageid");
 
         level++;
         if (level == depth - 1) {
@@ -229,14 +229,14 @@ void BPTree<K, V>::SplitPage(uint64_t pageid, Page& page,
             lpage.header.nkeys = mpos;
             lpage.header.next = rpageid;
             if (!pager->WritePage(lpageid, &lpage))
-                throw BPTreeException("failed to write left child page");
+                throw GarnerException("failed to write left child page");
 
             // populate right child
             size_t rsize = (page.header.nkeys - mpos) * 2 * sizeof(uint64_t);
             memcpy(&rpage.content[1], &page.content[1 + mpos * 2], rsize);
             rpage.header.nkeys = page.header.nkeys - mpos;
             if (!pager->WritePage(rpageid, &rpage))
-                throw BPTreeException("failed to write right child page");
+                throw GarnerException("failed to write right child page");
 
             // populate split node with first key of right child
             memset(page.content, 0, CONTENTLEN * sizeof(uint64_t));
@@ -253,7 +253,7 @@ void BPTree<K, V>::SplitPage(uint64_t pageid, Page& page,
             lpage.header.nkeys = mpos;
             lpage.header.next = rpageid;
             if (!pager->WritePage(lpageid, &lpage))
-                throw BPTreeException("failed to write left child page");
+                throw GarnerException("failed to write left child page");
 
             // populate right child
             size_t rsize =
@@ -261,7 +261,7 @@ void BPTree<K, V>::SplitPage(uint64_t pageid, Page& page,
             memcpy(&rpage.content[0], &page.content[2 + mpos * 2], rsize);
             rpage.header.nkeys = page.header.nkeys - mpos - 1;
             if (!pager->WritePage(rpageid, &rpage))
-                throw BPTreeException("failed to write right child page");
+                throw GarnerException("failed to write right child page");
 
             // populate split node with the middle key
             uint64_t mkey = page.content[1 + mpos * 2];
@@ -275,7 +275,7 @@ void BPTree<K, V>::SplitPage(uint64_t pageid, Page& page,
         page.header.nkeys = 1;
         page.header.depth++;
         if (!pager->WritePage(pageid, &page))
-            throw BPTreeException("failed to write root page after split");
+            throw GarnerException("failed to write root page after split");
 
         // update path vector
         path.push_back(rpageid);
@@ -300,7 +300,7 @@ void BPTree<K, V>::SplitPage(uint64_t pageid, Page& page,
             rpage.header.nkeys = page.header.nkeys - mpos;
             rpage.header.next = page.header.next;
             if (!pager->WritePage(rpageid, &rpage))
-                throw BPTreeException("failed to write right child page");
+                throw GarnerException("failed to write right child page");
 
             // trim current node
             mkey = rpage.content[1];
@@ -319,25 +319,25 @@ void BPTree<K, V>::SplitPage(uint64_t pageid, Page& page,
             rpage.header.nkeys = page.header.nkeys - mpos - 1;
             rpage.header.next = page.header.next;
             if (!pager->WritePage(rpageid, &rpage))
-                throw BPTreeException("failed to write right child page");
+                throw GarnerException("failed to write right child page");
 
             // trim current node
             mkey = page.content[1 + mpos * 2];
             memset(&page.content[1 + mpos * 2], 0, rsize + sizeof(uint64_t));
             page.header.nkeys = mpos;
         } else
-            throw BPTreeException("unknown page type encountered");
+            throw GarnerException("unknown page type encountered");
 
         // make current node link to new right node
         page.header.next = rpageid;
         if (!pager->WritePage(pageid, &page))
-            throw BPTreeException("failed to write split page");
+            throw GarnerException("failed to write split page");
 
         // insert the uplifted key into parent node
         uint64_t parentid = path[path.size() - 2];
         Page parent;
         if (!pager->ReadPage(parentid, &parent))
-            throw BPTreeException("failed to read parent page");
+            throw GarnerException("failed to read parent page");
         assert(parent.header.nkeys < degree);
         size_t idx = PageSearchKey(parent, mkey);
         ItnlPageInject(parent, idx, mkey, pageid, rpageid);
@@ -349,7 +349,7 @@ void BPTree<K, V>::SplitPage(uint64_t pageid, Page& page,
             path.push_back(rpageid);
         } else {
             if (!pager->WritePage(parentid, &parent))
-                throw BPTreeException("failed to update parent page");
+                throw GarnerException("failed to update parent page");
             path.back() = rpageid;
         }
     }
@@ -364,7 +364,7 @@ void BPTree<K, V>::Put(K key, V value) {
     uint64_t leafid = path.back();
     Page page;
     if (!pager->ReadPage(leafid, &page))
-        throw BPTreeException("failed to read leaf page");
+        throw GarnerException("failed to read leaf page");
 
     // inject key-value pair into the leaf node
     assert(page.header.nkeys < degree);
@@ -375,7 +375,7 @@ void BPTree<K, V>::Put(K key, V value) {
     if (page.header.nkeys >= degree)
         SplitPage(leafid, page, path);
     else if (!pager->WritePage(leafid, &page))
-        throw BPTreeException("failed to update leaf page");
+        throw GarnerException("failed to update leaf page");
 }
 
 template <typename K, typename V>
@@ -387,7 +387,7 @@ bool BPTree<K, V>::Get(K key, V& value) {
     uint64_t leafid = path.back();
     Page page;
     if (!pager->ReadPage(leafid, &page))
-        throw BPTreeException("failed to read leaf page");
+        throw GarnerException("failed to read leaf page");
 
     // search in leaf node for key
     size_t idx = PageSearchKey(page, key);
@@ -403,7 +403,7 @@ bool BPTree<K, V>::Get(K key, V& value) {
 
 template <typename K, typename V>
 bool BPTree<K, V>::Delete(K key) {
-    throw BPTreeException("unimplemented!");
+    throw GarnerException("unimplemented!");
 }
 
 template <typename K, typename V>
@@ -424,7 +424,13 @@ size_t BPTree<K, V>::Scan(K lkey, K rkey,
     size_t nrecords = 0;
     while (true) {
         if (!pager->ReadPage(leafid, &page))
-            throw BPTreeException("failed to read out leaf page in scan");
+            throw GarnerException("failed to read out leaf page in scan");
+
+        // if tree is completely empty, directly return
+        if (page.header.nkeys == 0) {
+            assert(leafid == 0);
+            return 0;
+        }
 
         // do a search if in left bound leaf page
         size_t lidx = 1, ridx = page.header.nkeys * 2 - 1;
@@ -462,9 +468,9 @@ void BPTree<K, V>::Load(const std::vector<std::tuple<K, V>>& records) {
     // only supports bulk-loading on empty B+ tree
     Page itnl;
     if (!pager->ReadPage(0, &itnl))
-        throw BPTreeException("failed to read out root page in load");
+        throw GarnerException("failed to read out root page in load");
     if (itnl.header.depth != 1 || itnl.header.nkeys != 0)
-        throw BPTreeException("only supports Load on new empty B+ tree");
+        throw GarnerException("only supports Load on new empty B+ tree");
 
     // ensure that the records array is sorted by key in increasing order
     K currkey = std::numeric_limits<K>::min();
@@ -472,7 +478,7 @@ void BPTree<K, V>::Load(const std::vector<std::tuple<K, V>>& records) {
     for (auto&& record : records) {
         K key = std::get<0>(record);
         if (key <= currkey && !firstkey)
-            throw BPTreeException("records vector input not valid");
+            throw GarnerException("records vector input not valid");
         currkey = key;
         firstkey = false;
     }
@@ -488,7 +494,7 @@ void BPTree<K, V>::Load(const std::vector<std::tuple<K, V>>& records) {
         }
         itnl.header.nkeys = records.size();
         if (!pager->WritePage(0, &itnl))
-            throw BPTreeException("failed to write root page in load");
+            throw GarnerException("failed to write root page in load");
         return;
     }
 
@@ -527,7 +533,7 @@ void BPTree<K, V>::Load(const std::vector<std::tuple<K, V>>& records) {
             else
                 leaf.header.next = 0;
             if (!pager->WritePage(leafid, &leaf))
-                throw BPTreeException("failed to write leaf page in load");
+                throw GarnerException("failed to write leaf page in load");
 
             if (is_first_leaf) {
                 // for the very first leaf, only a single pageid is to be
@@ -545,7 +551,7 @@ void BPTree<K, V>::Load(const std::vector<std::tuple<K, V>>& records) {
                 if (itnl.header.nkeys >= degree) {
                     SplitPage(path.back(), itnl, path);
                     if (!pager->ReadPage(path.back(), &itnl)) {
-                        throw BPTreeException(
+                        throw GarnerException(
                             "failed to read internal page in load");
                     }
                     itnlpos = degree - (degree / 2) - 1;
@@ -566,7 +572,7 @@ void BPTree<K, V>::Load(const std::vector<std::tuple<K, V>>& records) {
         leaf.header.nkeys = leafpos;
         leaf.header.next = 0;
         if (!pager->WritePage(leaves.back(), &leaf))
-            throw BPTreeException("failed to write leaf page in load");
+            throw GarnerException("failed to write leaf page in load");
 
         size_t search_idx = (itnlpos == 0) ? 0 : (itnlpos * 2 - 1);
         ItnlPageInject(itnl, search_idx, content[1], leaves[leaves.size() - 2],
@@ -575,7 +581,7 @@ void BPTree<K, V>::Load(const std::vector<std::tuple<K, V>>& records) {
     if (itnl.header.nkeys >= degree)
         SplitPage(path.back(), itnl, path);
     else if (!pager->WritePage(path.back(), &itnl))
-        throw BPTreeException("failed to write internal page in load");
+        throw GarnerException("failed to write internal page in load");
 }
 
 template <typename K, typename V>
@@ -588,7 +594,7 @@ void BPTree<K, V>::PrintStats(bool print_pages) {
         Page page;
         for (uint64_t pageid = 0; pageid < stats.npages; ++pageid) {
             if (!pager->ReadPage(pageid, &page))
-                throw BPTreeException("failed to read page for stats");
+                throw GarnerException("failed to read page for stats");
             std::cout << " " << pageid << " - " << page << std::endl;
         }
     }

@@ -9,12 +9,13 @@
 namespace garner {
 
 /** Exception type. */
-class BPTreeException : public std::exception {
+class GarnerException : public std::exception {
     std::string what_msg;
 
    public:
-    BPTreeException(std::string&& what_msg) : what_msg(what_msg) {}
-    ~BPTreeException() = default;
+    GarnerException(std::string&& what_msg)
+        : what_msg("GarnerException: " + what_msg) {}
+    ~GarnerException() = default;
 
     const char* what() const noexcept override { return what_msg.c_str(); }
 };

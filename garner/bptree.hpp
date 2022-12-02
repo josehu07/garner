@@ -24,7 +24,7 @@ namespace garner {
  */
 template <typename K, typename V>
 class BPTree {
-    friend BPTreeException;
+    friend GarnerException;
     friend BPTreeStats;
     friend Pager;
 
@@ -80,7 +80,7 @@ class BPTree {
     void SplitPage(uint64_t pageid, Page& page, std::vector<uint64_t>& path);
 
    public:
-    BPTree(std::string filename, size_t degree);
+    BPTree(const std::string& filename, size_t degree);
     ~BPTree();
 
     /**

@@ -6,4 +6,4 @@ set(CMAKE_CXX_STANDARD 20)
 add_subdirectory(garner)
 
 # Client, testing, and benchmarking executables.
-add_subdirectory(client)
+add_subdirectory(clients)

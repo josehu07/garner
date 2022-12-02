@@ -68,7 +68,7 @@ uint64_t Pager::AllocPage() {
         // otherwise, extend file by one page
         off_t filesize = lseek(fd, 0, SEEK_END);
         int ret = ftruncate(fd, filesize + BLKSIZE);
-        if (ret != 0) throw BPTreeException("failed to ftruncate file");
+        if (ret != 0) throw GarnerException("failed to ftruncate file");
         pageid = filesize / BLKSIZE;
     }
 
@@ -76,7 +76,7 @@ uint64_t Pager::AllocPage() {
     Page page;
     memset(page.content, 0, CONTENTLEN * sizeof(uint64_t));
     if (!WritePage(pageid, &page))
-        throw BPTreeException("failed to zero-fill page at allocation");
+        throw GarnerException("failed to zero-fill page at allocation");
 
     return pageid;
 }
@@ -87,7 +87,7 @@ void Pager::CheckStats(BPTreeStats& stats, bool init) {
     // get file size
     off_t filesize = lseek(fd, 0, SEEK_END);
     if (filesize % BLKSIZE != 0)
-        throw BPTreeException("file size not a multiple of block size");
+        throw GarnerException("file size not a multiple of block size");
 
     stats.npages = filesize / BLKSIZE;
     stats.npages_itnl = 0;
@@ -99,13 +99,13 @@ void Pager::CheckStats(BPTreeStats& stats, bool init) {
     // if root page not allocated yet, allocate it now
     if (filesize == 0) {
         int ret = ftruncate(fd, BLKSIZE);
-        if (ret != 0) throw BPTreeException("failed to ftruncate file");
+        if (ret != 0) throw GarnerException("failed to ftruncate file");
 
         Page page(PAGE_ROOT);
         memset(page.content, 0, CONTENTLEN * sizeof(uint64_t));
         page.header.depth = 1;
         if (!WritePage(0, &page))
-            throw BPTreeException("failed to write root page");
+            throw GarnerException("failed to write root page");
 
         stats.npages++;
     }
@@ -114,19 +114,19 @@ void Pager::CheckStats(BPTreeStats& stats, bool init) {
     PageHeader header;
     for (uint64_t pageid = 0; pageid < stats.npages; ++pageid) {
         if (!ReadPage(pageid, 0, sizeof(PageHeader), &header))
-            throw BPTreeException("error reading page header");
+            throw GarnerException("error reading page header");
 
         // check page magic number
         if (header.magic != MAGIC)
-            throw BPTreeException("page magic number mismatch");
+            throw GarnerException("page magic number mismatch");
 
         // page 0 must be the root node
         if (pageid == 0 && header.type != PAGE_ROOT)
-            throw BPTreeException("page 0 is not root node");
+            throw GarnerException("page 0 is not root node");
 
         // check number of keys field
         if (header.nkeys > MAXNKEYS)
-            throw BPTreeException("invalid number of keys in header");
+            throw GarnerException("invalid number of keys in header");
 
         // update statistics accordingly
         if (header.type == PAGE_ROOT || header.type == PAGE_ITNL) {
@@ -140,7 +140,7 @@ void Pager::CheckStats(BPTreeStats& stats, bool init) {
             // build freelist if initializing
             if (init) freelist.insert(pageid);
         } else
-            throw BPTreeException("unknown page type code");
+            throw GarnerException("unknown page type code");
     }
 
     // if tree only has one page, root is the only leaf
