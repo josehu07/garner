@@ -39,12 +39,16 @@ static std::tuple<std::vector<GarnerReq>, size_t> read_input_trace(
             degree = key;
             continue;
         }
-        GarnerOp op = (opcode == "GET")      ? GET
-                      : (opcode == "PUT")    ? PUT
-                      : (opcode == "DELETE") ? DELETE
-                      : (opcode == "SCAN")   ? SCAN
-                      : (opcode == "LOAD")   ? LOAD
-                                             : UNKNOWN;
+        GarnerOp op =
+            (opcode == "GET")
+                ? GET
+                : (opcode == "PUT")
+                      ? PUT
+                      : (opcode == "DELETE")
+                            ? DELETE
+                            : (opcode == "SCAN")
+                                  ? SCAN
+                                  : (opcode == "LOAD") ? LOAD : UNKNOWN;
         uint64_t rkey = 0;
         if (op == SCAN)
             input >> rkey;
