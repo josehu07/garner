@@ -1,6 +1,5 @@
-// Garner -- simple transactional DB interface to a B+-tree.
+// Garner -- simple transactional DB interface to an in-memory B+-tree.
 
-#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -9,17 +8,17 @@
 namespace garner {
 
 /**
- * Garner KV-DB interface struct.
- * Currently hardcodes key and value types as uint64_t.
+ * Garner in-memory KV-DB interface.
+ * Currently hardcodes both key and value types as std::string. Exposing
+ * generic types may require Garner be included as a pure template library.
  */
 class Garner {
    public:
-    typedef uint64_t KType;
-    typedef uint64_t VType;
+    typedef std::string KType;
+    typedef std::string VType;
 
     /**
-     * Opens a Gerner DB with specified backing file, returning a pointer to
-     * the interface struct on success and nullptr otherwise.
+     * Opens a Gerner KV-DB, returning a pointer to the interface on success.
      * Exceptions might be thrown.
      */
     static Garner* Open(size_t degree);
@@ -42,14 +41,14 @@ class Garner {
      * Returns false if search failed or key not found.
      * Exceptions might be thrown.
      */
-    virtual bool Get(KType key, VType& value) = 0;
+    virtual bool Get(const KType& key, VType& value) = 0;
 
     /**
      * Delete the record matching key.
      * Returns true if key found, otherwise false.
      * Exceptions might be thrown.
      */
-    virtual bool Delete(KType key) = 0;
+    virtual bool Delete(const KType& key) = 0;
 
     /**
      * Do a range scan over an inclusive key range [lkey, rkey], and
@@ -57,7 +56,7 @@ class Garner {
      * Returns the number of records found within range.
      * Exceptions might be thrown.
      */
-    virtual size_t Scan(KType lkey, KType rkey,
+    virtual size_t Scan(const KType& lkey, const KType& rkey,
                         std::vector<std::tuple<KType, VType>>& results) = 0;
 
     /**

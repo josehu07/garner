@@ -3,11 +3,12 @@ set(GARNER_SRC
     "bptree.hpp"
     "bptree.tpl.hpp"
     "common.hpp"
+    "common.cpp"
     "garner_impl.hpp"
     "garner_impl.tpl.hpp"
-    "garner.cpp"
+    "lib.cpp"
     "page.hpp"
-    "page.cpp"
+    "page.tpl.hpp"
 )
 add_library(garner ${GARNER_SRC})
 

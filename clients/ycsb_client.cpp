@@ -16,13 +16,13 @@
 #include "cxxopts.hpp"
 #include "garner.hpp"
 
-typedef enum { GET, PUT, DELETE, SCAN, LOAD, UNKNOWN } GarnerOp;
+enum GarnerOp { GET, PUT, DELETE, SCAN, UNKNOWN };
 
-typedef struct {
+struct GarnerReq {
     GarnerOp op;
-    uint64_t key;
-    uint64_t rkey;  // only valid for scan
-} GarnerReq;
+    std::string key;
+    std::string rkey;  // only valid for scan
+};
 
 static std::tuple<std::vector<GarnerReq>, size_t> read_input_trace(
     const std::string& filename) {
@@ -32,27 +32,20 @@ static std::tuple<std::vector<GarnerReq>, size_t> read_input_trace(
 
     std::ifstream input(filename);
     std::string opcode;
-    uint64_t key;
+    std::string key;
     while (input >> opcode >> key) {
         if (opcode == "DEGREE") {
             // special line indicating the degree parameter of tree
-            degree = key;
+            degree = std::stoul(key);
             continue;
         }
         GarnerOp op = (opcode == "GET")      ? GET
                       : (opcode == "PUT")    ? PUT
                       : (opcode == "DELETE") ? DELETE
                       : (opcode == "SCAN")   ? SCAN
-                      : (opcode == "LOAD")   ? LOAD
                                              : UNKNOWN;
-        uint64_t rkey = 0;
-        if (op == SCAN)
-            input >> rkey;
-        else if (op == LOAD) {
-            std::cerr << "Error: Garner does not support bulk-loading yet"
-                      << std::endl;
-            exit(1);
-        }
+        std::string rkey;
+        if (op == SCAN) input >> rkey;
         reqs.push_back(GarnerReq{.op = op, .key = key, .rkey = rkey});
     }
 
@@ -66,11 +59,11 @@ static std::tuple<std::vector<GarnerReq>, size_t> read_input_trace(
 }
 
 static std::tuple<unsigned, unsigned> execute_input_trace(
-    garner::Garner* garner, const std::vector<GarnerReq>& reqs, uint64_t value,
-    std::vector<double>& microsecs) {
+    garner::Garner* garner, const std::vector<GarnerReq>& reqs,
+    std::string value, std::vector<double>& microsecs) {
     unsigned cnt = 0, not_ok_cnt = 0;
-    uint64_t get_buf;
-    std::vector<std::tuple<uint64_t, uint64_t>> scan_buf;
+    std::string get_buf;
+    std::vector<std::tuple<std::string, std::string>> scan_buf;
 
     for (const auto& req : reqs) {
         try {
@@ -90,7 +83,6 @@ static std::tuple<unsigned, unsigned> execute_input_trace(
                     time_start = std::chrono::high_resolution_clock::now();
                     garner->Scan(req.key, req.rkey, scan_buf);
                     break;
-                case LOAD:
                 case UNKNOWN:
                 default:
                     std::cerr << "Error: unrecognized opcode" << std::endl;
@@ -165,15 +157,15 @@ int main(int argc, char* argv[]) {
     std::vector<GarnerReq> reqs;
     size_t degree = 0;
     std::tie(reqs, degree) = read_input_trace(trace);
-    uint64_t value = 7;
+    std::string value = "ABCDEFGHIJ";
 
-    auto* garner = garner::Garner::Open(degree);
+    auto* gn = garner::Garner::Open(degree);
     std::vector<double> microsecs;
-    auto [cnt, _] = execute_input_trace(garner, reqs, value, microsecs);
+    auto [cnt, _] = execute_input_trace(gn, reqs, std::move(value), microsecs);
     std::cout << "Finished " << cnt << " requests." << std::endl << std::endl;
 
     print_results_latency(microsecs);
-    garner->PrintStats(false);
+    gn->PrintStats(false);
 
     return 0;
 }

@@ -17,17 +17,17 @@ void GarnerImpl::Put(KType key, VType value) {
     bptree->Put(key, value);
 }
 
-bool GarnerImpl::Get(KType key, VType& value) {
+bool GarnerImpl::Get(const KType& key, VType& value) {
     // TODO: finish me transactionally
     return bptree->Get(key, value);
 }
 
-bool GarnerImpl::Delete(KType key) {
+bool GarnerImpl::Delete(const KType& key) {
     // TODO: finish me transactionally
     return bptree->Delete(key);
 }
 
-size_t GarnerImpl::Scan(KType lkey, KType rkey,
+size_t GarnerImpl::Scan(const KType& lkey, const KType& rkey,
                         std::vector<std::tuple<KType, VType>>& results) {
     // TODO: finish me transactionally
     return bptree->Scan(lkey, rkey, results);

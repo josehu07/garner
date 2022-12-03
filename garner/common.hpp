@@ -1,6 +1,10 @@
 // Common helper classes and functions.
 
+#include <syscall.h>
+#include <unistd.h>
+
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 
@@ -8,7 +12,7 @@
 
 namespace garner {
 
-/** Exception type. */
+/** Universal exception type. */
 class GarnerException : public std::exception {
     std::string what_msg;
 
@@ -23,20 +27,39 @@ class GarnerException : public std::exception {
 /** Statistics buffer. */
 struct BPTreeStats {
     size_t npages;
-    size_t npages_itnl;
+    size_t npages_itnl;  // includes root page
     size_t npages_leaf;
-    size_t npages_empty;
     size_t nkeys_itnl;
     size_t nkeys_leaf;
 };
 
-std::ostream& operator<<(std::ostream& s, const BPTreeStats& stats) {
-    return s << "BPTreeStats{npages=" << stats.npages
-             << ",npages_itnl=" << stats.npages_itnl
-             << ",npages_leaf=" << stats.npages_leaf
-             << ",npages_empty=" << stats.npages_empty
-             << ",nkeys_itnl=" << stats.nkeys_itnl
-             << ",nkeys_leaf=" << stats.nkeys_leaf << "}";
+std::ostream& operator<<(std::ostream& s, const BPTreeStats& stats);
+
+/** Debug printing utilities. */
+
+// thread ID
+extern thread_local const pid_t tid;
+
+// get std::string representation of any variable that has operator<<
+template <typename T>
+static inline std::string StreamStr(const T& item) {
+    std::ostringstream ss;
+    ss << item;
+    return std::move(ss.str());
 }
+
+// `DEBUG()` and `assert()` are not active if NDEBUG is defined at
+// compilation time by the build system.
+#ifdef NDEBUG
+#define DEBUG(msg, ...)
+#else
+#define DEBUG(msg, ...)                                                       \
+    do {                                                                      \
+        const char* tmp = strrchr(__FILE__, '/');                             \
+        const char* file = tmp ? tmp + 1 : __FILE__;                          \
+        fprintf(stderr, "[%20s:%-4d@t:%-6d]  " msg "\n", file, __LINE__, tid, \
+                ##__VA_ARGS__);                                               \
+    } while (0)
+#endif
 
 }  // namespace garner

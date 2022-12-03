@@ -8,11 +8,14 @@
 #include <random>
 #include <set>
 #include <stdexcept>
+#include <string>
 #include <tuple>
 #include <vector>
 
 #include "cxxopts.hpp"
 #include "garner.hpp"
+
+static constexpr unsigned NUM_ROUNDS = 100;
 
 class FuzzyTestException : public std::exception {
     std::string what_msg;
@@ -24,42 +27,68 @@ class FuzzyTestException : public std::exception {
     const char* what() const noexcept override { return what_msg.c_str(); }
 };
 
+// generate random string
+static std::string gen_rand_string(std::mt19937& gen, size_t len) {
+    static constexpr char alphanum[] =
+        "0123456789"
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "abcdefghijklmnopqrstuvwxyz";
+    static std::uniform_int_distribution<size_t> rand_idx(0,
+                                                          sizeof(alphanum) - 2);
+
+    std::string str;
+    str.reserve(len);
+    for (size_t i = 0; i < len; ++i) str += alphanum[rand_idx(gen)];
+
+    return str;
+}
+
 static void fuzzy_test_round(bool do_puts) {
     constexpr size_t TEST_DEGREE = 6;
+    constexpr size_t KEY_LEN = 8;
+    constexpr size_t VAL_LEN = 10;
     constexpr uint64_t MAX_KEY = 1200;
     constexpr size_t NUM_FOUND_GETS = 15;
     constexpr size_t NUM_NOTFOUND_GETS = 5;
-    constexpr size_t NUM_TINY_SCANS = 10;
-    constexpr size_t NUM_NORMAL_SCANS = 7;
-    constexpr size_t NUM_HUGE_SCANS = 3;
+    constexpr size_t NUM_SCANS = 10;
 
-    auto* garner = garner::Garner::Open(TEST_DEGREE);
+    auto* gn = garner::Garner::Open(TEST_DEGREE);
 
     std::srand(std::time(NULL));
     std::random_device rd;
     std::mt19937 gen(rd());
-    std::uniform_int_distribution<uint64_t> randkey(0, MAX_KEY);
 
     size_t NUM_PUTS = 0;
     if (do_puts) {
-        std::uniform_int_distribution<size_t> randnputs(1, 6 * 6 * 6 * 3);
-        NUM_PUTS = randnputs(gen);
+        std::uniform_int_distribution<size_t> rand_nputs_small(1, 6 * 2);
+        std::uniform_int_distribution<size_t> rand_nputs_medium(6 * 2 + 1,
+                                                                6 * 6 * 2);
+        std::uniform_int_distribution<size_t> rand_nputs_large(6 * 6 * 2 + 1,
+                                                               6 * 6 * 6 * 3);
+        unsigned choice = std::uniform_int_distribution<unsigned>(1, 3)(gen);
+        NUM_PUTS = (choice == 1)   ? rand_nputs_small(gen)
+                   : (choice == 2) ? rand_nputs_medium(gen)
+                                   : rand_nputs_large(gen);
     }
 
-    std::map<uint64_t, uint64_t> refmap;
-    std::vector<uint64_t> refvec;
+    std::cout << " Degree=" << TEST_DEGREE << " "
+              << "#puts=" << NUM_PUTS << std::endl;
 
-    auto CheckedPut = [&](uint64_t key, uint64_t val) {
+    std::map<std::string, std::string> refmap;
+    std::vector<std::string> refvec;
+
+    auto CheckedPut = [&](std::string key, std::string val) {
         // std::cout << "Put " << key << " " << val << std::endl;
-        garner->Put(key, val);
+        gn->Put(key, val);
         refmap[key] = val;
         refvec.push_back(key);
     };
-    auto CheckedGet = [&](uint64_t key) {
-        uint64_t val = 0, refval = 1;
+
+    auto CheckedGet = [&](const std::string& key) {
+        std::string val = "", refval = "null";
         bool found = false, reffound = false;
         // std::cout << "Get " << key;
-        found = garner->Get(key, val);
+        found = gn->Get(key, val);
         // if (found)
         //     std::cout << " found " << val << std::endl;
         // else
@@ -67,20 +96,20 @@ static void fuzzy_test_round(bool do_puts) {
         reffound = refmap.contains(key);
         if (reffound) refval = refmap[key];
         if (reffound != found) {
-            throw FuzzyTestException(
-                "Get mismatch: key=" + std::to_string(key) + " found=" +
-                (found ? "T" : "F") + " reffound=" + (found ? "T" : "F"));
+            throw FuzzyTestException("Get mismatch: key=" + key +
+                                     " found=" + (found ? "T" : "F") +
+                                     " reffound=" + (found ? "T" : "F"));
         } else if (found && reffound && refval != val) {
-            throw FuzzyTestException(
-                "Get mismatch: key=" + std::to_string(key) + " val=" +
-                std::to_string(val) + " refval=" + std::to_string(refval));
+            throw FuzzyTestException("Get mismatch: key=" + key +
+                                     " val=" + val + " refval=" + refval);
         }
     };
-    auto CheckedScan = [&](uint64_t lkey, uint64_t rkey) {
-        std::vector<std::tuple<uint64_t, uint64_t>> results, refresults;
+
+    auto CheckedScan = [&](const std::string& lkey, const std::string& rkey) {
+        std::vector<std::tuple<std::string, std::string>> results, refresults;
         size_t nrecords = 0, refnrecords = 0;
         // std::cout << "Scan " << lkey << "-" << rkey;
-        nrecords = garner->Scan(lkey, rkey, results);
+        nrecords = gn->Scan(lkey, rkey, results);
         // std::cout << " got " << nrecords << std::endl;
         for (auto&& it = refmap.lower_bound(lkey);
              it != refmap.upper_bound(rkey); ++it) {
@@ -89,43 +118,42 @@ static void fuzzy_test_round(bool do_puts) {
         }
         if (refnrecords != nrecords) {
             throw FuzzyTestException(
-                "Scan mismatch: lkey=" + std::to_string(lkey) + " rkey=" +
-                std::to_string(rkey) + " nrecords=" + std::to_string(nrecords) +
+                "Scan mismatch: lkey=" + lkey + " rkey=" + rkey +
+                " nrecords=" + std::to_string(nrecords) +
                 " refnrecords=" + std::to_string(refnrecords));
         } else {
             for (size_t i = 0; i < nrecords; ++i) {
                 auto [key, val] = results[i];
                 auto [refkey, refval] = refresults[i];
                 if (refkey != key) {
-                    throw FuzzyTestException(
-                        "Scan mismatch: lkey=" + std::to_string(lkey) +
-                        " rkey=" + std::to_string(rkey) +
-                        " key=" + std::to_string(key) +
-                        " refkey=" + std::to_string(refkey));
+                    throw FuzzyTestException("Scan mismatch: lkey=" + lkey +
+                                             " rkey=" + rkey + " key=" + key +
+                                             " refkey=" + refkey);
                 } else if (refval != val) {
-                    throw FuzzyTestException(
-                        "Scan mismatch: lkey=" + std::to_string(lkey) +
-                        " rkey=" + std::to_string(rkey) +
-                        " val=" + std::to_string(val) +
-                        " refval=" + std::to_string(refval));
+                    throw FuzzyTestException("Scan mismatch: lkey=" + lkey +
+                                             " rkey=" + rkey + " val=" + val +
+                                             " refval=" + refval);
                 }
             }
         }
     };
 
-    // garner->PrintStats(true);
+    // gn->PrintStats(true);
 
-    // putting a bunch of random records
-    std::cout << " Testing random Puts..." << std::endl;
-    for (size_t i = 0; i < NUM_PUTS; ++i) {
-        uint64_t key = randkey(gen);
-        CheckedPut(key, 7);
+    // putting random records
+    if (do_puts) {
+        std::cout << " Testing random Puts..." << std::endl;
+        for (size_t i = 0; i < NUM_PUTS; ++i) {
+            std::string key = gen_rand_string(gen, KEY_LEN);
+            std::string val = gen_rand_string(gen, VAL_LEN);
+            CheckedPut(std::move(key), std::move(val));
+        }
     }
 
-    // garner->PrintStats(true);
+    gn->PrintStats(true);
 
     // getting keys that should be found
-    if (refvec.size() > 0) {
+    if (do_puts) {
         std::cout << " Testing found Gets..." << std::endl;
         std::uniform_int_distribution<size_t> randidx(0, refvec.size() - 1);
         for (size_t i = 0; i < NUM_FOUND_GETS; ++i) {
@@ -137,41 +165,25 @@ static void fuzzy_test_round(bool do_puts) {
     // getting keys that should not be found
     std::cout << " Testing not-found Gets..." << std::endl;
     for (size_t i = 0; i < NUM_NOTFOUND_GETS; ++i) {
-        uint64_t key;
+        std::string key;
         do {
-            key = randkey(gen);
+            key = gen_rand_string(gen, KEY_LEN);
         } while (refmap.contains(key));
         CheckedGet(key);
     }
 
-    // scanning with tiny ranges
-    std::cout << " Testing tiny Scans..." << std::endl;
-    for (size_t i = 0; i < NUM_TINY_SCANS; ++i) {
-        uint64_t lkey = randkey(gen);
-        uint64_t rkey = lkey + 2;
+    // scanning random ranges
+    std::cout << " Testing random Scans..." << std::endl;
+    for (size_t i = 0; i < NUM_SCANS; ++i) {
+        std::string lkey = gen_rand_string(gen, KEY_LEN);
+        std::string rkey;
+        do {
+            rkey = gen_rand_string(gen, KEY_LEN);
+        } while (rkey < lkey);
         CheckedScan(lkey, rkey);
     }
 
-    // scanning with normal ranges
-    std::cout << " Testing normal Scans..." << std::endl;
-    for (size_t i = 0; i < NUM_NORMAL_SCANS; ++i) {
-        std::uniform_int_distribution<uint64_t> randlkey(
-            0, MAX_KEY - (MAX_KEY / 10));
-        uint64_t lkey = randlkey(gen);
-        uint64_t rkey = lkey + (MAX_KEY / 10);
-        CheckedScan(lkey, rkey);
-    }
-
-    // scanning with huge ranges
-    std::cout << " Testing huge Scans..." << std::endl;
-    for (size_t i = 0; i < NUM_HUGE_SCANS; ++i) {
-        std::uniform_int_distribution<uint64_t> randlkey(0, MAX_KEY / 5);
-        uint64_t lkey = randlkey(gen);
-        uint64_t rkey = lkey + (MAX_KEY - (MAX_KEY / 5));
-        CheckedScan(lkey, rkey);
-    }
-
-    // garner->PrintStats(true);
+    // gn->PrintStats(true);
 
     std::cout << " Fuzzy tests passed!" << std::endl;
 }
@@ -189,7 +201,7 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    for (unsigned round = 0; round < 10; ++round) {
+    for (unsigned round = 0; round < NUM_ROUNDS; ++round) {
         std::cout << "Round " << round << " --" << std::endl;
         fuzzy_test_round(round != 0);
     }
