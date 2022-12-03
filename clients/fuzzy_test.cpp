@@ -150,7 +150,7 @@ static void fuzzy_test_round(bool do_puts) {
         }
     }
 
-    gn->PrintStats(true);
+    // gn->PrintStats(true);
 
     // getting keys that should be found
     if (do_puts) {

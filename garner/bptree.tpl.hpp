@@ -315,7 +315,7 @@ size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
         }
 
         // do a search if in left bound leaf page
-        size_t lidx = 0, ridx = leaf->NumKeys();
+        size_t lidx = 0;
         if (leaf == lleaf) {
             ssize_t idx = leaf->SearchKey(lkey);
             if (idx >= 0 && leaf->keys[idx] == lkey)
@@ -327,7 +327,7 @@ size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
         }
 
         // gather records within range; watch out for right bound
-        for (size_t idx = lidx; idx <= ridx; ++idx) {
+        for (size_t idx = lidx; idx < leaf->NumKeys(); ++idx) {
             K key = leaf->keys[idx];
             if (key > rkey) return nrecords;
 
@@ -336,7 +336,8 @@ size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
                 value = reinterpret_cast<PageRoot<K, V>*>(leaf)->values[idx];
             else
                 value = reinterpret_cast<PageLeaf<K, V>*>(leaf)->values[idx];
-            results.push_back(std::make_tuple(key, value));
+            results.push_back(
+                std::make_tuple(std::move(key), std::move(value)));
             nrecords++;
         }
 
@@ -344,7 +345,8 @@ size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
         if (leaf->type == PAGE_LEAF) {
             leaf = reinterpret_cast<PageLeaf<K, V>*>(leaf)->next;
             if (leaf == nullptr) return nrecords;
-        }
+        } else
+            return nrecords;
     }
 }
 
