@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <iostream>
+#include <shared_mutex>
 #include <vector>
 
 #pragma once
@@ -11,14 +12,14 @@ namespace garner {
 /**
  * Page types enum.
  */
-enum PageType {
+typedef enum PageType {
     PAGE_EMPTY = 0,
     PAGE_ROOT = 1,  // root node of tree
     PAGE_ITNL = 2,  // internal node other than root
     PAGE_LEAF = 3,  // leaf node storing values
-};
+} PageType;
 
-std::string PageTypeStr(enum PageType type) {
+std::string PageTypeStr(PageType type) {
     switch (type) {
         case PAGE_EMPTY:
             return "empty";
@@ -42,19 +43,20 @@ std::string PageTypeStr(enum PageType type) {
 template <typename K>
 struct Page {
     // page type
-    const enum PageType type = PAGE_EMPTY;
+    const PageType type = PAGE_EMPTY;
 
     // max number of keys
     const size_t degree = 0;
 
-    // TODO: add latch field
+    // read-write mutex as latch
+    std::shared_mutex latch;
 
     // sorted list of keys
     std::vector<K> keys;
 
     Page() = delete;
-    Page(enum PageType type, size_t degree)
-        : type(type), degree(degree), keys() {
+    Page(PageType type, size_t degree)
+        : type(type), degree(degree), latch(), keys() {
         keys.reserve(degree);
     }
 

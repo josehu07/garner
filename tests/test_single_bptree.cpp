@@ -14,44 +14,17 @@
 
 #include "cxxopts.hpp"
 #include "garner.hpp"
+#include "utils.hpp"
 
 static constexpr unsigned NUM_ROUNDS = 100;
-
-class FuzzyTestException : public std::exception {
-    std::string what_msg;
-
-   public:
-    FuzzyTestException(std::string&& what_msg) : what_msg(what_msg) {}
-    ~FuzzyTestException() = default;
-
-    const char* what() const noexcept override { return what_msg.c_str(); }
-};
-
-// generate random string
-static std::string gen_rand_string(std::mt19937& gen, size_t len) {
-    static constexpr char alphanum[] =
-        "0123456789"
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        "abcdefghijklmnopqrstuvwxyz";
-    static std::uniform_int_distribution<size_t> rand_idx(0,
-                                                          sizeof(alphanum) - 2);
-
-    std::string str;
-    str.reserve(len);
-    for (size_t i = 0; i < len; ++i) str += alphanum[rand_idx(gen)];
-
-    return str;
-}
+static constexpr size_t TEST_DEGREE = 8;
+static constexpr size_t KEY_LEN = 8;
+static constexpr size_t VAL_LEN = 10;
+static constexpr size_t NUM_FOUND_GETS = 15;
+static constexpr size_t NUM_NOTFOUND_GETS = 5;
+static constexpr size_t NUM_SCANS = 10;
 
 static void fuzzy_test_round(bool do_puts) {
-    constexpr size_t TEST_DEGREE = 6;
-    constexpr size_t KEY_LEN = 8;
-    constexpr size_t VAL_LEN = 10;
-    constexpr uint64_t MAX_KEY = 1200;
-    constexpr size_t NUM_FOUND_GETS = 15;
-    constexpr size_t NUM_NOTFOUND_GETS = 5;
-    constexpr size_t NUM_SCANS = 10;
-
     auto* gn = garner::Garner::Open(TEST_DEGREE);
 
     std::srand(std::time(NULL));
@@ -80,8 +53,8 @@ static void fuzzy_test_round(bool do_puts) {
     auto CheckedPut = [&](std::string key, std::string val) {
         // std::cout << "Put " << key << " " << val << std::endl;
         gn->Put(key, val);
+        if (!refmap.contains(key)) refvec.push_back(key);
         refmap[key] = val;
-        refvec.push_back(key);
     };
 
     auto CheckedGet = [&](const std::string& key) {
@@ -155,10 +128,10 @@ static void fuzzy_test_round(bool do_puts) {
     // getting keys that should be found
     if (do_puts) {
         std::cout << " Testing found Gets..." << std::endl;
-        std::uniform_int_distribution<size_t> randidx(0, refvec.size() - 1);
+        std::uniform_int_distribution<size_t> rand_idx(0, refvec.size() - 1);
         for (size_t i = 0; i < NUM_FOUND_GETS; ++i) {
-            size_t idx = randidx(gen);
-            CheckedGet(refvec[idx]);
+            std::string key = refvec[rand_idx(gen)];
+            CheckedGet(key);
         }
     }
 
@@ -171,6 +144,19 @@ static void fuzzy_test_round(bool do_puts) {
         } while (refmap.contains(key));
         CheckedGet(key);
     }
+
+    // changing values in-place
+    if (do_puts) {
+        std::cout << " Testing in-place Puts..." << std::endl;
+        std::uniform_int_distribution<size_t> rand_idx(0, refvec.size() - 1);
+        for (size_t i = 0; i < NUM_PUTS; ++i) {
+            std::string key = refvec[rand_idx(gen)];
+            std::string val = gen_rand_string(gen, VAL_LEN);
+            CheckedPut(std::move(key), std::move(val));
+        }
+    }
+
+    // gn->PrintStats(true);
 
     // scanning random ranges
     std::cout << " Testing random Scans..." << std::endl;
@@ -185,7 +171,8 @@ static void fuzzy_test_round(bool do_puts) {
 
     // gn->PrintStats(true);
 
-    std::cout << " Fuzzy tests passed!" << std::endl;
+    std::cout << " Single-thread BPTree tests passed!" << std::endl;
+    delete gn;
 }
 
 int main(int argc, char* argv[]) {

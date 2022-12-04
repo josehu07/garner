@@ -5,8 +5,10 @@
 #include <cstring>
 #include <iostream>
 #include <limits>
+#include <mutex>
 #include <new>
 #include <set>
+#include <shared_mutex>
 #include <stdexcept>
 #include <string>
 #include <tuple>
@@ -25,14 +27,18 @@ namespace garner {
 template <typename K, typename V>
 class BPTree {
    private:
+    /** Latch mode during traversal. */
+    typedef enum LatchMode { LATCH_READ, LATCH_WRITE, LATCH_NONE } LatchMode;
+
     // max number of keys per node page
     const size_t degree = 0;
 
     // pointer to root page, set at initiailization
     PageRoot<K, V>* root = nullptr;
 
-    // set of all pages allocated
+    // set of all pages allocated; this is for simplicity
     std::set<Page<K>*> all_pages;
+    std::mutex all_pages_lock;
 
     /**
      * Allocate a new page of specific type.
@@ -41,18 +47,34 @@ class BPTree {
     PageItnl<K, V>* NewPageItnl();
 
     /**
+     * Returns true if given page is safe from structural mutations in
+     * concurrent latching, otherwise false.
+     */
+    bool IsConcurrencySafe(const Page<K>* page) const;
+
+    /**
      * Do B+ tree search to traverse through internal nodes and find the
      * correct leaf node.
-     * Returns a vector of node pages starting from root to the searched
-     * leaf node.
+     *
+     * Does "latch crabbing" for safe concurrency:
+     * https://15445.courses.cs.cmu.edu/fall2018/slides/09-indexconcurrency.pdf
+     * After return, proper latches will stay held according to latch mode.
+     *
+     * Returns a tuple of two vectors: (path, write_latched_pages)
+     * - path: list of node pages starting from root to the searched leaf node.
+     * - write_latched_pages: list of pages still latched in write mode
      */
-    std::vector<Page<K>*> TraverseToLeaf(const K& key) const;
+    std::tuple<std::vector<Page<K>*>, std::vector<Page<K>*>> TraverseToLeaf(
+        const K& key, LatchMode latch_mode);
 
     /**
      * Split the given page into two siblings, and propagate one new key
      * up to the parent node. May trigger cascading splits. The path
      * argument is a list of internal node pages, starting from root, leading
      * to the node to be split.
+     *
+     * Must have write latches already held on possibly affected pages.
+     *
      * After this function returns, the path vector will be updated to
      * reflect the new path to the right sibling node.
      */
@@ -94,6 +116,8 @@ class BPTree {
     /**
      * Scan the whole B+-tree and print statistics.
      * If print_pages is true, also prints content of all pages.
+     *
+     * For simplicity, this method only for debugging and is NOT thread-safe.
      */
     void PrintStats(bool print_pages = false);
 };

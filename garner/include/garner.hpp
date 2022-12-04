@@ -19,7 +19,11 @@ class Garner {
 
     /**
      * Opens a Gerner KV-DB, returning a pointer to the interface on success.
+     * The returned interface is thread-safe and can be used by multiple
+     * client threads.
      * Exceptions might be thrown.
+     *
+     * The returned struct should be deleted when no longer needed.
      */
     static Garner* Open(size_t degree);
 
@@ -28,7 +32,7 @@ class Garner {
     Garner(const Garner&) = delete;
     Garner& operator=(const Garner&) = delete;
 
-    ~Garner() = default;
+    virtual ~Garner() = default;
 
     /**
      * Insert a key-value pair into B+ tree.
@@ -62,6 +66,8 @@ class Garner {
     /**
      * Scan the whole B+-tree and print statistics.
      * If print_pages is true, also prints content of all pages.
+     *
+     * For simplicity, this method only for debugging and is NOT thread-safe.
      */
     virtual void PrintStats(bool print_pages = false) = 0;
 };

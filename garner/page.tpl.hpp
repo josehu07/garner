@@ -47,7 +47,7 @@ void PageLeaf<K, V>::Inject(ssize_t search_idx, K key, V value) {
 
     // if key has exact match with the one on idx, simply update its value
     if (search_idx >= 0 && this->keys[search_idx] == key) {
-        values[search_idx] == value;
+        values[search_idx] = value;
         return;
     }
 
@@ -92,7 +92,7 @@ void PageRoot<K, V>::Inject(ssize_t search_idx, K key, V value) {
 
     // if key has exact match with the one on idx, simply update its value
     if (search_idx >= 0 && this->keys[search_idx] == key) {
-        values[search_idx] == value;
+        values[search_idx] = value;
         return;
     }
 

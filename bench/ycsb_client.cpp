@@ -16,7 +16,7 @@
 #include "cxxopts.hpp"
 #include "garner.hpp"
 
-enum GarnerOp { GET, PUT, DELETE, SCAN, UNKNOWN };
+typedef enum GarnerOp { GET, PUT, DELETE, SCAN, UNKNOWN } GarnerOp;
 
 struct GarnerReq {
     GarnerOp op;
@@ -167,5 +167,6 @@ int main(int argc, char* argv[]) {
     print_results_latency(microsecs);
     gn->PrintStats(false);
 
+    delete gn;
     return 0;
 }

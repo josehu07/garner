@@ -22,8 +22,40 @@ sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-11 100
 sudo update-alternatives --install /usr/bin/gcov gcov /usr/bin/gcov-11 100
 ```
 
+Build Garner library & client executables:
+
+```bash
+mkdir build && cd build
+cmake -DCMAKE_BUILD_TYPE=Release ..
+make -j
+```
+
+## Run
+
+Run all tests:
+
+```bash
+ctest
+```
+
+Run individual test:
+
+```bash
+./tests/test_<name> -h
+```
+
 TODO
 
-concurrent bptree
-txn manager
-impl Delete
+## TODO List
+
+- [x] Basic concurrent BPTree
+- [ ] Transaction manager
+- [ ] Basic HV-OCC protocol
+- [ ] Simple benchmarking
+- [ ] Better latching to reduce root contention
+- [ ] Implement Delete & related concurrency
+
+## References
+
+- [Latch crabbing (Latch coupling)](https://15445.courses.cs.cmu.edu/fall2018/slides/09-indexconcurrency.pdf)
+- [Silo OCC](https://dl.acm.org/doi/10.1145/2517349.2522713)
