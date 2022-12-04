@@ -9,6 +9,7 @@ namespace garner {
 
 /**
  * Garner in-memory KV-DB interface.
+ *
  * Currently hardcodes both key and value types as std::string. Exposing
  * generic types may require Garner be included as a pure template library.
  */
@@ -21,6 +22,7 @@ class Garner {
      * Opens a Gerner KV-DB, returning a pointer to the interface on success.
      * The returned interface is thread-safe and can be used by multiple
      * client threads.
+     *
      * Exceptions might be thrown.
      *
      * The returned struct should be deleted when no longer needed.
@@ -36,6 +38,7 @@ class Garner {
 
     /**
      * Insert a key-value pair into B+ tree.
+     *
      * Exceptions might be thrown.
      */
     virtual void Put(KType key, VType value) = 0;
@@ -43,6 +46,7 @@ class Garner {
     /**
      * Search for a key, fill given reference with value.
      * Returns false if search failed or key not found.
+     *
      * Exceptions might be thrown.
      */
     virtual bool Get(const KType& key, VType& value) = 0;
@@ -50,6 +54,7 @@ class Garner {
     /**
      * Delete the record matching key.
      * Returns true if key found, otherwise false.
+     *
      * Exceptions might be thrown.
      */
     virtual bool Delete(const KType& key) = 0;
@@ -58,16 +63,17 @@ class Garner {
      * Do a range scan over an inclusive key range [lkey, rkey], and
      * append found records to the given vector.
      * Returns the number of records found within range.
+     *
      * Exceptions might be thrown.
      */
     virtual size_t Scan(const KType& lkey, const KType& rkey,
                         std::vector<std::tuple<KType, VType>>& results) = 0;
 
     /**
-     * Scan the whole B+-tree and print statistics.
-     * If print_pages is true, also prints content of all pages.
+     * Scan the whole B+-tree and print statistics. If print_pages is true,
+     * also prints content of all pages.
      *
-     * For simplicity, this method only for debugging and is NOT thread-safe.
+     * This method is only for debugging; it is NOT thread-safe.
      */
     virtual void PrintStats(bool print_pages = false) = 0;
 };

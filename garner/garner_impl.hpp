@@ -27,9 +27,6 @@ class GarnerImpl : public Garner {
 
     ~GarnerImpl();
 
-    /**
-     * Implementations of the DB interface.
-     */
     void Put(KType key, VType value) override;
     bool Get(const KType& key, VType& value) override;
     bool Delete(const KType& key) override;

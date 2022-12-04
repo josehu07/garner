@@ -58,7 +58,8 @@ class BPTree {
      *
      * Does "latch crabbing" for safe concurrency:
      * https://15445.courses.cs.cmu.edu/fall2018/slides/09-indexconcurrency.pdf
-     * After return, proper latches will stay held according to latch mode.
+     * After return, proper latches will stay held according to latch mode. It
+     * is the caller's job to unlock them later.
      *
      * Returns a tuple of two vectors: (path, write_latched_pages)
      * - path: list of node pages starting from root to the searched leaf node.
@@ -86,6 +87,7 @@ class BPTree {
 
     /**
      * Insert a key-value pair into B+ tree.
+     *
      * Exceptions might be thrown.
      */
     void Put(K key, V value);
@@ -93,6 +95,7 @@ class BPTree {
     /**
      * Search for a key, fill given reference with value.
      * Returns false if search failed or key not found.
+     *
      * Exceptions might be thrown.
      */
     bool Get(const K& key, V& value);
@@ -100,6 +103,7 @@ class BPTree {
     /**
      * Delete the record matching key.
      * Returns true if key found, otherwise false.
+     *
      * Exceptions might be thrown.
      */
     bool Delete(const K& key);
@@ -108,16 +112,17 @@ class BPTree {
      * Do a range scan over an inclusive key range [lkey, rkey], and
      * append found records to the given vector.
      * Returns the number of records found within range.
+     *
      * Exceptions might be thrown.
      */
     size_t Scan(const K& lkey, const K& rkey,
                 std::vector<std::tuple<K, V>>& results);
 
     /**
-     * Scan the whole B+-tree and print statistics.
-     * If print_pages is true, also prints content of all pages.
+     * Scan the whole B+-tree and print statistics. If print_pages is true,
+     * also prints content of all pages.
      *
-     * For simplicity, this method only for debugging and is NOT thread-safe.
+     * This method is only for debugging; it is NOT thread-safe.
      */
     void PrintStats(bool print_pages = false);
 };

@@ -39,23 +39,29 @@ ssize_t Page<K>::SearchKey(const K& key) const {
 }
 
 template <typename K, typename V>
-void PageLeaf<K, V>::Inject(ssize_t search_idx, K key, V value) {
+Record<V>* PageLeaf<K, V>::Inject(ssize_t search_idx, K key) {
     assert(this->NumKeys() < this->degree);
     assert(search_idx >= -1 &&
            search_idx < static_cast<ssize_t>(this->NumKeys()));
-    assert(values.size() == this->NumKeys());
+    assert(records.size() == this->NumKeys());
 
-    // if key has exact match with the one on idx, simply update its value
+    // if key has exact match with the one on idx, simply return that record
     if (search_idx >= 0 && this->keys[search_idx] == key) {
-        values[search_idx] = value;
-        return;
+        Record<V>* record = records[search_idx];
+        assert(record != nullptr);
+        return record;
     }
 
     // otherwise, shift any array content with larger key to the right, and
-    // inject key and value
+    // inject key and empty record
     size_t shift_idx = search_idx + 1;
     this->keys.insert(this->keys.begin() + shift_idx, key);
-    values.insert(values.begin() + shift_idx, value);
+
+    Record<V>* record = new Record<V>();
+    if (record == nullptr)
+        throw GarnerException("failed to allocate new record");
+    records.insert(records.begin() + shift_idx, record);
+    return record;
 }
 
 template <typename K, typename V>
@@ -82,25 +88,31 @@ void PageItnl<K, V>::Inject(ssize_t search_idx, K key, Page<K>* lpage,
 }
 
 template <typename K, typename V>
-void PageRoot<K, V>::Inject(ssize_t search_idx, K key, V value) {
+Record<V>* PageRoot<K, V>::Inject(ssize_t search_idx, K key) {
     assert(this->NumKeys() < this->degree);
     assert(search_idx >= -1 &&
            search_idx < static_cast<ssize_t>(this->NumKeys()));
-    assert(values.size() == this->NumKeys());
+    assert(records.size() == this->NumKeys());
     assert(depth == 1);
     assert(children.empty());
 
-    // if key has exact match with the one on idx, simply update its value
+    // if key has exact match with the one on idx, simply return that record
     if (search_idx >= 0 && this->keys[search_idx] == key) {
-        values[search_idx] = value;
-        return;
+        Record<V>* record = records[search_idx];
+        assert(record != nullptr);
+        return record;
     }
 
     // otherwise, shift any array content with larger key to the right, and
-    // inject key and value
+    // inject key and empty record
     size_t shift_idx = search_idx + 1;
     this->keys.insert(this->keys.begin() + shift_idx, key);
-    values.insert(values.begin() + shift_idx, value);
+
+    Record<V>* record = new Record<V>();
+    if (record == nullptr)
+        throw GarnerException("failed to allocate new record");
+    records.insert(records.begin() + shift_idx, record);
+    return record;
 }
 
 template <typename K, typename V>
@@ -111,7 +123,7 @@ void PageRoot<K, V>::Inject(ssize_t search_idx, K key, Page<K>* lpage,
            search_idx < static_cast<ssize_t>(this->NumKeys()));
     assert(children.size() == this->keys.size() + 1);
     assert(depth > 1);
-    assert(values.empty());
+    assert(records.empty());
 
     // must not have duplicate internal node keys
     if (search_idx >= 0 && this->keys[search_idx] == key)
