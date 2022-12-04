@@ -5,599 +5,487 @@
 namespace garner {
 
 template <typename K, typename V>
-BPTree<K, V>::BPTree(const std::string& filename, size_t degree)
-    : filename(filename), degree(degree) {
-    // key and value type must be integral within 64-bit width for now
-    static_assert(std::is_unsigned<K>::value, "key must be unsigned integral");
-    static_assert(std::is_unsigned<V>::value,
-                  "value must be unsigned integral");
-    static_assert(sizeof(K) <= sizeof(uint64_t),
-                  "key must be within 64-bit width");
-    static_assert(sizeof(V) <= sizeof(uint64_t),
-                  "value must be within 64-bit width");
-
-    // degree must be between [2, MAXNKEYS]
-    if (degree < 2 || degree > MAXNKEYS) {
-        throw GarnerException("invalid degree parameter " +
+BPTree<K, V>::BPTree(size_t degree)
+    : degree(degree), all_pages(), all_pages_lock() {
+    if (degree < 4) {
+        throw GarnerException("degree parameter too small: " +
                               std::to_string(degree));
     }
 
-    // open the backing file
-    fd = open(filename.c_str(), O_CREAT | O_RDWR,
-              S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-    if (fd <= 0) throw GarnerException("failed to open backing file");
-
-    // initialize pager
-    pager = new Pager(fd, degree);
+    // allocate root page
+    // root page never gets re-alloced, so it is thread-safe to just use the
+    // root field as root page pointer
+    root = new PageRoot<K, V>(degree);
+    if (root == nullptr)
+        throw GarnerException("failed to allocate memory for root page");
+    all_pages.insert(root);
 }
 
 template <typename K, typename V>
 BPTree<K, V>::~BPTree() {
-    if (fd > 0) close(fd);
-
-    delete pager;
+    std::lock_guard<std::mutex> lg(all_pages_lock);
+    for (auto* page : all_pages) delete page;
 }
 
 template <typename K, typename V>
-void BPTree<K, V>::ReopenBackingFile(int flags) {
-    assert(fd > 0);
-    close(fd);
-
-    fd = open(filename.c_str(), flags | O_RDWR);
-    if (fd <= 0) throw GarnerException("failed to re-open backing file");
-
-    pager->fd = fd;
+PageLeaf<K, V>* BPTree<K, V>::NewPageLeaf() {
+    auto* page = new PageLeaf<K, V>(degree);
+    if (page == nullptr)
+        throw GarnerException("failed to allocate memory for new page");
+    std::lock_guard<std::mutex> lg(all_pages_lock);
+    all_pages.insert(page);
+    return page;
 }
 
 template <typename K, typename V>
-size_t BPTree<K, V>::PageSearchKey(const Page& page, K key) {
-    size_t nkeys = page.header.nkeys;
-    if (nkeys == 0) return 0;
-
-    // binary search for key in content array
-    size_t spos = 0, epos = nkeys;
-    while (true) {
-        size_t pos = (spos + epos) / 2;
-        size_t idx = 1 + pos * 2;
-
-        if (page.content[idx] == key) {
-            // found equality
-            return idx;
-        } else {
-            // shrink range
-            if (page.content[idx] < key)
-                spos = pos + 1;
-            else
-                epos = pos;
-        }
-
-        if (spos >= epos) break;
-    }
-
-    // no equality, return idx of last spos
-    assert(spos == epos);
-    if (spos == 0) return 0;
-    return 1 + (spos - 1) * 2;
+PageItnl<K, V>* BPTree<K, V>::NewPageItnl() {
+    auto* page = new PageItnl<K, V>(degree);
+    if (page == nullptr)
+        throw GarnerException("failed to allocate memory for new page");
+    std::lock_guard<std::mutex> lg(all_pages_lock);
+    all_pages.insert(page);
+    return page;
 }
 
 template <typename K, typename V>
-void BPTree<K, V>::LeafPageInject(Page& page, size_t search_idx, K key,
-                                  V value) {
-    assert(page.header.nkeys < degree);
-    assert(search_idx == 0 || search_idx % 2 == 1);
-
-    // if key has exact match with the one on idx, simply update its value
-    if (search_idx > 0) {
-        size_t search_pos = (search_idx - 1) / 2;
-        if (search_pos < page.header.nkeys && page.content[search_idx] == key) {
-            page.content[search_idx + 1] = value;
-            return;
-        }
-    }
-
-    // shift any array content with larger key to the right
-    size_t inject_pos, inject_idx;
-    if (search_idx == 0) {
-        // if key is smaller than all existing keys
-        inject_pos = 0;
-        inject_idx = 1;
-    } else {
-        size_t search_pos = (search_idx - 1) / 2;
-        inject_pos = search_pos + 1;
-        inject_idx = 1 + inject_pos * 2;
-    }
-    if (inject_pos < page.header.nkeys) {
-        size_t shift_src = 1 + inject_pos * 2;
-        size_t shift_dst = shift_src + 2;
-        size_t shift_len =
-            (page.header.nkeys - inject_pos) * 2 * sizeof(uint64_t);
-        memmove(&page.content[shift_dst], &page.content[shift_src], shift_len);
-    }
-
-    // inject key and value to its slot
-    page.content[inject_idx] = key;
-    page.content[inject_idx + 1] = value;
-
-    // update number of keys
-    page.header.nkeys++;
+bool BPTree<K, V>::IsConcurrencySafe(const Page<K>* page) const {
+    // TODO: add condition for deletion safety
+    return page->NumKeys() < degree - 1;
 }
 
 template <typename K, typename V>
-void BPTree<K, V>::ItnlPageInject(Page& page, size_t search_idx, K key,
-                                  uint64_t lpageid, uint64_t rpageid) {
-    assert(page.header.nkeys < degree);
-    assert(search_idx == 0 || search_idx % 2 == 1);
-
-    // must not have duplicate internal node keys
-    if (search_idx > 0) {
-        size_t search_pos = (search_idx - 1) / 2;
-        if (search_pos < page.header.nkeys && page.content[search_idx] == key)
-            throw GarnerException("duplicate internal node keys detected");
-    }
-
-    // shift any array content with larger key to the right
-    size_t inject_pos, inject_idx;
-    if (search_idx == 0) {
-        // if key is smaller than all existing keys
-        inject_pos = 0;
-        inject_idx = 1;
-    } else {
-        size_t search_pos = (search_idx - 1) / 2;
-        inject_pos = search_pos + 1;
-        inject_idx = 1 + inject_pos * 2;
-    }
-    if (inject_pos < page.header.nkeys) {
-        size_t shift_src = 1 + inject_pos * 2;
-        size_t shift_dst = shift_src + 2;
-        size_t shift_len =
-            (page.header.nkeys - inject_pos) * 2 * sizeof(uint64_t);
-        memmove(&page.content[shift_dst], &page.content[shift_src], shift_len);
-    }
-
-    // the pageid to the left of inject slot must be equal to left child
-    if (page.content[inject_idx - 1] != lpageid)
-        throw GarnerException("left child pageid does not match");
-
-    // inject key and pageid to its slot
-    page.content[inject_idx] = key;
-    page.content[inject_idx + 1] = rpageid;
-
-    // update number of keys
-    page.header.nkeys++;
-}
-
-template <typename K, typename V>
-std::tuple<std::vector<uint64_t>, size_t> BPTree<K, V>::TraverseToLeaf(K key) {
-    Page page;
-    uint64_t pageid = 0;
+std::tuple<std::vector<Page<K>*>, std::vector<Page<K>*>>
+BPTree<K, V>::TraverseToLeaf(const K& key, LatchMode latch_mode) {
+    Page<K>* page = root;
     unsigned level = 0, depth;
-    std::vector<uint64_t> path;
+    std::vector<Page<K>*> path;
+    std::vector<Page<K>*> write_latched_pages;
 
-    // search through internal pages, start from root
+    if (latch_mode == LATCH_READ) {
+        page->latch.lock_shared();
+        DEBUG("latch R acquire %p", static_cast<void*>(page));
+    } else if (latch_mode == LATCH_WRITE) {
+        page->latch.lock();
+        DEBUG("latch W acquire %p", static_cast<void*>(page));
+        write_latched_pages.push_back(page);
+    }
+
+    // read out depth of tree, check if root is the only leaf
+    depth = reinterpret_cast<PageRoot<K, V>*>(page)->depth;
+    if (depth == 1) {
+        path.push_back(page);
+        // latch on root still held on return
+        return std::make_tuple(path, write_latched_pages);
+    }
+
+    // search through internal pages, starting from root
     while (true) {
-        path.push_back(pageid);
-        if (!pager->ReadPage(pageid, &page))
-            throw GarnerException("failed to read internal page");
-
-        // if at root page, read out depth of tree
-        if (level == 0) {
-            depth = page.header.depth;
-            if (depth == 1) {
-                // root is the leaf, return
-                return std::make_tuple(path, 0);
-            }
-        }
+        path.push_back(page);
 
         // search the nearest key that is <= given key in node
-        size_t idx = PageSearchKey(page, key);
-        idx = (idx == 0) ? 0 : (idx + 1);
+        ssize_t idx = page->SearchKey(key);
 
-        // fetch the correct child node pageid
-        uint64_t childid = page.content[idx];
-        if (childid == 0) throw GarnerException("got 0 as child node pageid");
+        // fetch the correct child node page
+        Page<K>* child =
+            (page->type == PAGE_ROOT)
+                ? reinterpret_cast<PageRoot<K, V>*>(page)->children[idx + 1]
+                : reinterpret_cast<PageItnl<K, V>*>(page)->children[idx + 1];
+        if (child == nullptr)
+            throw GarnerException("got nullptr as child node page");
+
+        // latch crabbing
+        if (latch_mode == LATCH_READ) {
+            child->latch.lock_shared();
+            DEBUG("latch R acquire %p", static_cast<void*>(child));
+            page->latch.unlock_shared();
+            DEBUG("latch R release %p", static_cast<void*>(page));
+        } else if (latch_mode == LATCH_WRITE) {
+            child->latch.lock();
+            DEBUG("latch W acquire %p", static_cast<void*>(child));
+            // if child is safe, release all ancestors' write latches
+            if (IsConcurrencySafe(child)) {
+                assert(write_latched_pages.back() == page);
+                for (auto* ancestor : write_latched_pages) {
+                    ancestor->latch.unlock();
+                    DEBUG("latch W release %p", static_cast<void*>(ancestor));
+                }
+                write_latched_pages.clear();
+            }
+            write_latched_pages.push_back(child);
+        }
 
         level++;
         if (level == depth - 1) {
-            path.push_back(childid);
-            return std::make_tuple(path, idx);
+            path.push_back(child);
+            // proper latch(es) still held on return
+            return std::make_tuple(path, write_latched_pages);
         }
 
-        pageid = childid;
+        page = child;
     }
 }
 
 template <typename K, typename V>
-void BPTree<K, V>::SplitPage(uint64_t pageid, Page& page,
-                             std::vector<uint64_t>& path) {
-    // if spliting root page, need to allocate two pages
-    if (page.header.type == PAGE_ROOT) {
-        assert(pageid == 0);
+void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path) {
+    if (page->type == PAGE_ROOT) {
+        // if spliting root page, need to allocate two pages
+        auto* spage = reinterpret_cast<PageRoot<K, V>*>(page);
         assert(path.size() == 1);
-        assert(path[0] == 0);
+        assert(spage == root);
+        assert(path[0] == root);
 
-        size_t mpos = page.header.nkeys / 2;
-        uint64_t lpageid, rpageid;
+        size_t mpos = spage->NumKeys() / 2;
+        Page<K>*lpage_saved, *rpage_saved;
 
-        // special case of the very first split of root leaf
-        if (page.header.depth == 1) {
-            Page lpage(PAGE_LEAF), rpage(PAGE_LEAF);
-            lpageid = pager->AllocPage(), rpageid = pager->AllocPage();
+        if (spage->depth == 1) {
+            // special case of the very first split of root leaf
+            DEBUG("split root leaf %p", static_cast<void*>(spage));
+
+            auto* lpage = NewPageLeaf();
+            auto* rpage = NewPageLeaf();
+            lpage_saved = lpage;
+            rpage_saved = rpage;
 
             // populate left child
-            size_t lsize = mpos * 2 * sizeof(uint64_t);
-            memcpy(&lpage.content[1], &page.content[1], lsize);
-            lpage.header.nkeys = mpos;
-            lpage.header.next = rpageid;
-            if (!pager->WritePage(lpageid, &lpage))
-                throw GarnerException("failed to write left child page");
+            std::copy(spage->keys.begin(), spage->keys.begin() + mpos,
+                      std::back_inserter(lpage->keys));
+            std::copy(spage->values.begin(), spage->values.begin() + mpos,
+                      std::back_inserter(lpage->values));
+
+            // set left child's next pointer
+            lpage->next = rpage;
 
             // populate right child
-            size_t rsize = (page.header.nkeys - mpos) * 2 * sizeof(uint64_t);
-            memcpy(&rpage.content[1], &page.content[1 + mpos * 2], rsize);
-            rpage.header.nkeys = page.header.nkeys - mpos;
-            if (!pager->WritePage(rpageid, &rpage))
-                throw GarnerException("failed to write right child page");
+            std::copy(spage->keys.begin() + mpos, spage->keys.end(),
+                      std::back_inserter(rpage->keys));
+            std::copy(spage->values.begin() + mpos, spage->values.end(),
+                      std::back_inserter(rpage->values));
 
             // populate split node with first key of right child
-            memset(page.content, 0, CONTENTLEN * sizeof(uint64_t));
-            page.content[1] = rpage.content[1];
+            spage->keys.clear();
+            spage->values.clear();
+            spage->keys.push_back(rpage->keys[0]);
 
-            // splitting root into two internal nodes
         } else {
-            Page lpage(PAGE_ITNL), rpage(PAGE_ITNL);
-            lpageid = pager->AllocPage(), rpageid = pager->AllocPage();
+            // splitting root into two internal nodes
+            DEBUG("split root internal %p", static_cast<void*>(spage));
+
+            auto* lpage = NewPageItnl();
+            auto* rpage = NewPageItnl();
+            lpage_saved = lpage;
+            rpage_saved = rpage;
 
             // populate left child
-            size_t lsize = (1 + mpos * 2) * sizeof(uint64_t);
-            memcpy(&lpage.content[0], &page.content[0], lsize);
-            lpage.header.nkeys = mpos;
-            lpage.header.next = rpageid;
-            if (!pager->WritePage(lpageid, &lpage))
-                throw GarnerException("failed to write left child page");
+            std::copy(spage->keys.begin(), spage->keys.begin() + mpos,
+                      std::back_inserter(lpage->keys));
+            std::copy(spage->children.begin(),
+                      spage->children.begin() + mpos + 1,
+                      std::back_inserter(lpage->children));
 
             // populate right child
-            size_t rsize =
-                ((page.header.nkeys - mpos) * 2 - 1) * sizeof(uint64_t);
-            memcpy(&rpage.content[0], &page.content[2 + mpos * 2], rsize);
-            rpage.header.nkeys = page.header.nkeys - mpos - 1;
-            if (!pager->WritePage(rpageid, &rpage))
-                throw GarnerException("failed to write right child page");
+            std::copy(spage->keys.begin() + mpos + 1, spage->keys.end(),
+                      std::back_inserter(rpage->keys));
+            std::copy(spage->children.begin() + mpos + 1, spage->children.end(),
+                      std::back_inserter(rpage->children));
 
             // populate split node with the middle key
-            uint64_t mkey = page.content[1 + mpos * 2];
-            memset(page.content, 0, CONTENTLEN * sizeof(uint64_t));
-            page.content[1] = mkey;
+            K mkey = spage->keys[mpos];
+            spage->keys.clear();
+            spage->children.clear();
+            spage->keys.push_back(mkey);
         }
 
-        // prepare new root info, increment tree depth
-        page.content[0] = lpageid;
-        page.content[2] = rpageid;
-        page.header.nkeys = 1;
-        page.header.depth++;
-        if (!pager->WritePage(pageid, &page))
-            throw GarnerException("failed to write root page after split");
+        // set new root child pointers, increment tree depth
+        spage->children.push_back(lpage_saved);
+        spage->children.push_back(rpage_saved);
+        spage->depth++;
 
         // update path vector
-        path.push_back(rpageid);
+        path.push_back(rpage_saved);
 
-        // if splitting a non-root node
     } else {
-        assert(pageid != 0);
+        // if splitting a non-root node
         assert(path.size() > 1);
-        assert(path.back() == pageid);
+        assert(path.back() == page);
 
-        size_t mpos = page.header.nkeys / 2;
-        uint64_t rpageid, mkey;
+        size_t mpos = page->NumKeys() / 2;
+        Page<K>* rpage_saved;
+        K mkey;
 
-        // if splitting a non-root leaf node
-        if (page.header.type == PAGE_LEAF) {
-            Page rpage(PAGE_LEAF);
-            rpageid = pager->AllocPage();
+        if (page->type == PAGE_LEAF) {
+            // if splitting a non-root leaf node
+            DEBUG("split leaf %p", static_cast<void*>(page));
+
+            auto* spage = reinterpret_cast<PageLeaf<K, V>*>(page);
+            auto* rpage = NewPageLeaf();
+            rpage_saved = rpage;
 
             // populate right child
-            size_t rsize = (page.header.nkeys - mpos) * 2 * sizeof(uint64_t);
-            memcpy(&rpage.content[1], &page.content[1 + mpos * 2], rsize);
-            rpage.header.nkeys = page.header.nkeys - mpos;
-            rpage.header.next = page.header.next;
-            if (!pager->WritePage(rpageid, &rpage))
-                throw GarnerException("failed to write right child page");
+            std::copy(spage->keys.begin() + mpos, spage->keys.end(),
+                      std::back_inserter(rpage->keys));
+            std::copy(spage->values.begin() + mpos, spage->values.end(),
+                      std::back_inserter(rpage->values));
+
+            // set right child's next pointer
+            rpage->next = spage->next;
 
             // trim current node
-            mkey = rpage.content[1];
-            memset(&page.content[1 + mpos * 2], 0, rsize);
-            page.header.nkeys = mpos;
+            mkey = rpage->keys[0];
+            spage->keys.erase(spage->keys.begin() + mpos, spage->keys.end());
+            spage->values.erase(spage->values.begin() + mpos,
+                                spage->values.end());
 
+            // make current node's next link to new right node
+            spage->next = rpage;
+
+        } else if (page->type == PAGE_ITNL) {
             // if splitting a non-root internal node
-        } else if (page.header.type == PAGE_ITNL) {
-            Page rpage(PAGE_ITNL);
-            rpageid = pager->AllocPage();
+            DEBUG("split internal %p", static_cast<void*>(page));
+
+            auto* spage = reinterpret_cast<PageItnl<K, V>*>(page);
+            auto* rpage = NewPageItnl();
+            rpage_saved = rpage;
 
             // populate right child
-            size_t rsize =
-                ((page.header.nkeys - mpos) * 2 - 1) * sizeof(uint64_t);
-            memcpy(&rpage.content[0], &page.content[2 + mpos * 2], rsize);
-            rpage.header.nkeys = page.header.nkeys - mpos - 1;
-            rpage.header.next = page.header.next;
-            if (!pager->WritePage(rpageid, &rpage))
-                throw GarnerException("failed to write right child page");
+            std::copy(spage->keys.begin() + mpos + 1, spage->keys.end(),
+                      std::back_inserter(rpage->keys));
+            std::copy(spage->children.begin() + mpos + 1, spage->children.end(),
+                      std::back_inserter(rpage->children));
 
             // trim current node
-            mkey = page.content[1 + mpos * 2];
-            memset(&page.content[1 + mpos * 2], 0, rsize + sizeof(uint64_t));
-            page.header.nkeys = mpos;
+            mkey = spage->keys[mpos];
+            spage->keys.erase(spage->keys.begin() + mpos, spage->keys.end());
+            spage->children.erase(spage->children.begin() + mpos + 1,
+                                  spage->children.end());
         } else
             throw GarnerException("unknown page type encountered");
 
-        // make current node link to new right node
-        page.header.next = rpageid;
-        if (!pager->WritePage(pageid, &page))
-            throw GarnerException("failed to write split page");
-
         // insert the uplifted key into parent node
-        uint64_t parentid = path[path.size() - 2];
-        Page parent;
-        if (!pager->ReadPage(parentid, &parent))
-            throw GarnerException("failed to read parent page");
-        assert(parent.header.nkeys < degree);
-        size_t idx = PageSearchKey(parent, mkey);
-        ItnlPageInject(parent, idx, mkey, pageid, rpageid);
+        Page<K>* parent = path[path.size() - 2];
+        assert(parent->NumKeys() < degree);
+        ssize_t idx = parent->SearchKey(mkey);
+        if (parent->type == PAGE_ROOT) {
+            reinterpret_cast<PageRoot<K, V>*>(parent)->Inject(idx, mkey, page,
+                                                              rpage_saved);
+        } else {
+            reinterpret_cast<PageItnl<K, V>*>(parent)->Inject(idx, mkey, page,
+                                                              rpage_saved);
+        }
 
         // if parent internal node becomes full, do split recursively
-        if (parent.header.nkeys >= degree) {
+        if (parent->NumKeys() >= degree) {
             path.pop_back();
-            SplitPage(parentid, parent, path);
-            path.push_back(rpageid);
+            SplitPage(parent, path);
+            path.push_back(rpage_saved);
         } else {
-            if (!pager->WritePage(parentid, &parent))
-                throw GarnerException("failed to update parent page");
-            path.back() = rpageid;
+            path.back() = rpage_saved;
         }
     }
 }
 
 template <typename K, typename V>
 void BPTree<K, V>::Put(K key, V value) {
+    DEBUG("req Put %s val %s", StreamStr(key).c_str(),
+          StreamStr(value).c_str());
+
     // traverse to the correct leaf node and read
-    std::vector<uint64_t> path;
-    std::tie(path, std::ignore) = TraverseToLeaf(key);
+    std::vector<Page<K>*> path;
+    std::vector<Page<K>*> write_latched_pages;
+    std::tie(path, write_latched_pages) = TraverseToLeaf(key, LATCH_WRITE);
     assert(path.size() > 0);
-    uint64_t leafid = path.back();
-    Page page;
-    if (!pager->ReadPage(leafid, &page))
-        throw GarnerException("failed to read leaf page");
+    Page<K>* leaf = path.back();
 
     // inject key-value pair into the leaf node
-    assert(page.header.nkeys < degree);
-    size_t idx = PageSearchKey(page, key);
-    LeafPageInject(page, idx, key, value);
+    assert(leaf->NumKeys() < degree);
+    ssize_t idx = leaf->SearchKey(key);
+    if (leaf->type == PAGE_ROOT)
+        reinterpret_cast<PageRoot<K, V>*>(leaf)->Inject(idx, key, value);
+    else
+        reinterpret_cast<PageLeaf<K, V>*>(leaf)->Inject(idx, key, value);
 
     // if this leaf node becomes full, do split
-    if (page.header.nkeys >= degree)
-        SplitPage(leafid, page, path);
-    else if (!pager->WritePage(leafid, &page))
-        throw GarnerException("failed to update leaf page");
+    if (leaf->NumKeys() >= degree) SplitPage(leaf, path);
+
+    // release held write latch(es)
+    assert(write_latched_pages.size() > 0);
+    assert(write_latched_pages.back() == leaf);
+    for (auto* page : write_latched_pages) {
+        page->latch.unlock();
+        DEBUG("latch W release %p", static_cast<void*>(page));
+    }
 }
 
 template <typename K, typename V>
-bool BPTree<K, V>::Get(K key, V& value) {
+bool BPTree<K, V>::Get(const K& key, V& value) {
+    DEBUG("req Get %s", StreamStr(key).c_str());
+
     // traverse to the correct leaf node and read
-    std::vector<uint64_t> path;
-    std::tie(path, std::ignore) = TraverseToLeaf(key);
+    std::vector<Page<K>*> path;
+    std::tie(path, std::ignore) = TraverseToLeaf(key, LATCH_READ);
     assert(path.size() > 0);
-    uint64_t leafid = path.back();
-    Page page;
-    if (!pager->ReadPage(leafid, &page))
-        throw GarnerException("failed to read leaf page");
+    Page<K>* leaf = path.back();
 
     // search in leaf node for key
-    size_t idx = PageSearchKey(page, key);
-    if (idx == 0 || page.content[idx] != key) {
+    ssize_t idx = leaf->SearchKey(key);
+    if (idx == -1 || leaf->keys[idx] != key) {
         // not found
+        // release held read latch
+        leaf->latch.unlock_shared();
+        DEBUG("latch R release %p", static_cast<void*>(leaf));
         return false;
     }
 
     // found match key, fetch value
-    value = page.content[idx + 1];
+    if (leaf->type == PAGE_ROOT)
+        value = reinterpret_cast<PageRoot<K, V>*>(leaf)->values[idx];
+    else
+        value = reinterpret_cast<PageLeaf<K, V>*>(leaf)->values[idx];
+
+    // release held read latch
+    leaf->latch.unlock_shared();
+    DEBUG("latch R release %p", static_cast<void*>(leaf));
     return true;
 }
 
 template <typename K, typename V>
-bool BPTree<K, V>::Delete(K key) {
-    throw GarnerException("unimplemented!");
+bool BPTree<K, V>::Delete(__attribute__((unused)) const K& _key) {
+    // TODO: implement me
+    throw GarnerException("Delete not implemented yet!");
 }
 
 template <typename K, typename V>
-size_t BPTree<K, V>::Scan(K lkey, K rkey,
+size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
                           std::vector<std::tuple<K, V>>& results) {
+    DEBUG("req Scan %s to %s", StreamStr(lkey).c_str(),
+          StreamStr(rkey).c_str());
+
     if (lkey > rkey) return 0;
 
     // traverse to leaf node for left bound of range
-    std::vector<uint64_t> lpath;
-    std::tie(lpath, std::ignore) = TraverseToLeaf(lkey);
+    std::vector<Page<K>*> lpath;
+    std::tie(lpath, std::ignore) = TraverseToLeaf(lkey, LATCH_READ);
     assert(lpath.size() > 0);
-    uint64_t lleafid = lpath.back();
+    Page<K>* lleaf = lpath.back();
 
     // read out the leaf pages in a loop by following sibling chains,
     // gathering records in range
-    Page page;
-    uint64_t leafid = lleafid;
+    Page<K>* leaf = lleaf;
     size_t nrecords = 0;
     while (true) {
-        if (!pager->ReadPage(leafid, &page))
-            throw GarnerException("failed to read out leaf page in scan");
-
         // if tree is completely empty, directly return
-        if (page.header.nkeys == 0) {
-            assert(leafid == 0);
+        if (leaf->NumKeys() == 0) {
+            assert(leaf->type == PAGE_ROOT);
+            leaf->latch.unlock_shared();
+            DEBUG("latch R release %p", static_cast<void*>(leaf));
             return 0;
         }
 
         // do a search if in left bound leaf page
-        size_t lidx = 1, ridx = page.header.nkeys * 2 - 1;
-        if (leafid == lleafid) {
-            size_t idx = PageSearchKey(page, lkey);
-            if (idx != 0 && page.content[idx] == lkey)
+        size_t lidx = 0;
+        if (leaf == lleaf) {
+            ssize_t idx = leaf->SearchKey(lkey);
+            if (idx >= 0 && leaf->keys[idx] == lkey)
                 lidx = idx;
-            else if (idx == 0)
-                lidx = 1;
+            else if (idx == -1)
+                lidx = 0;
             else
-                lidx = idx + 2;
+                lidx = idx + 1;
         }
 
         // gather records within range; watch out for right bound
-        for (size_t idx = lidx; idx <= ridx; idx += 2) {
-            K key = page.content[idx];
-            V value = page.content[idx + 1];
-            if (key <= rkey) {
-                results.push_back(std::make_tuple(key, value));
-                nrecords++;
-            } else
+        for (size_t idx = lidx; idx < leaf->NumKeys(); ++idx) {
+            K key = leaf->keys[idx];
+            if (key > rkey) {
+                leaf->latch.unlock_shared();
+                DEBUG("latch R release %p", static_cast<void*>(leaf));
                 return nrecords;
-        }
-
-        // move on to right sibling
-        leafid = page.header.next;
-        if (leafid == 0) return nrecords;
-    }
-}
-
-template <typename K, typename V>
-void BPTree<K, V>::Load(const std::vector<std::tuple<K, V>>& records) {
-    if (records.size() == 0) return;
-
-    // only supports bulk-loading on empty B+ tree
-    Page itnl;
-    if (!pager->ReadPage(0, &itnl))
-        throw GarnerException("failed to read out root page in load");
-    if (itnl.header.depth != 1 || itnl.header.nkeys != 0)
-        throw GarnerException("only supports Load on new empty B+ tree");
-
-    // ensure that the records array is sorted by key in increasing order
-    K currkey = std::numeric_limits<K>::min();
-    bool firstkey = true;
-    for (auto&& record : records) {
-        K key = std::get<0>(record);
-        if (key <= currkey && !firstkey)
-            throw GarnerException("records vector input not valid");
-        currkey = key;
-        firstkey = false;
-    }
-
-    // special case where the root can directly hold all records
-    if (records.size() < degree) {
-        // simply put into root node as leaf
-        for (size_t pos = 0; pos < records.size(); ++pos) {
-            size_t idx = 1 + pos * 2;
-            auto [key, value] = records[pos];
-            itnl.content[idx] = key;
-            itnl.content[idx + 1] = value;
-        }
-        itnl.header.nkeys = records.size();
-        if (!pager->WritePage(0, &itnl))
-            throw GarnerException("failed to write root page in load");
-        return;
-    }
-
-    // pre-allocate the required leaf pages at once
-    size_t nkeys = degree - 1;
-    size_t nleaves = records.size() / nkeys;
-    if (records.size() % nkeys != 0) nleaves++;
-    std::vector<uint64_t> leaves;
-    leaves.reserve(nleaves);
-    for (size_t i = 0; i < nleaves; ++i) leaves.push_back(pager->AllocPage());
-
-    // the path list required for splits needs to be maintained along the
-    // loading process
-    std::vector<uint64_t> path{0};
-
-    // directly write leaf pages and append to the right-most internal page
-    uint64_t content[1 + nkeys * 2];
-    size_t leafidx = 0, leafpos = 0, itnlpos = 0;
-    Page leaf(PAGE_LEAF);
-    bool is_first_leaf = true;
-    for (auto&& record : records) {
-        assert(leafpos < nkeys);
-        size_t idx = 1 + leafpos * 2;
-        auto [key, value] = record;
-        content[idx] = key;
-        content[idx + 1] = value;
-        leafpos++;
-
-        if (leafpos == nkeys) {
-            // filled current leaf page buffer, write out
-            uint64_t leafid = leaves[leafidx];
-            memcpy(leaf.content, content, (1 + nkeys * 2) * sizeof(uint64_t));
-            leaf.header.nkeys = nkeys;
-            if (leafidx < nleaves - 1)
-                leaf.header.next = leaves[leafidx + 1];
-            else
-                leaf.header.next = 0;
-            if (!pager->WritePage(leafid, &leaf))
-                throw GarnerException("failed to write leaf page in load");
-
-            if (is_first_leaf) {
-                // for the very first leaf, only a single pageid is to be
-                // written into root pages slot 0
-                assert(itnl.header.type == PAGE_ROOT);
-                itnl.content[0] = leafid;
-                itnl.header.depth = 2;
-                is_first_leaf = false;
-            } else {
-                // else, need to append a key-pageid pair into the current
-                // internal node, possibly triggering splits
-                size_t search_idx = (itnlpos == 0) ? 0 : (itnlpos * 2 - 1);
-                ItnlPageInject(itnl, search_idx, content[1],
-                               leaves[leafidx - 1], leafid);
-                if (itnl.header.nkeys >= degree) {
-                    SplitPage(path.back(), itnl, path);
-                    if (!pager->ReadPage(path.back(), &itnl)) {
-                        throw GarnerException(
-                            "failed to read internal page in load");
-                    }
-                    itnlpos = degree - (degree / 2) - 1;
-                } else
-                    itnlpos++;
             }
 
-            memset(content, 0, (1 + nkeys * 2) * sizeof(uint64_t));
-            leafpos = 0;
-            leafidx++;
+            V value;
+            if (leaf->type == PAGE_ROOT)
+                value = reinterpret_cast<PageRoot<K, V>*>(leaf)->values[idx];
+            else
+                value = reinterpret_cast<PageLeaf<K, V>*>(leaf)->values[idx];
+            results.push_back(
+                std::make_tuple(std::move(key), std::move(value)));
+            nrecords++;
+        }
+
+        // move on to the right sibling
+        if (leaf->type == PAGE_LEAF) {
+            Page<K>* next = reinterpret_cast<PageLeaf<K, V>*>(leaf)->next;
+            if (next == nullptr) {
+                leaf->latch.unlock_shared();
+                DEBUG("latch R release %p", static_cast<void*>(leaf));
+                return nrecords;
+            }
+
+            // latch crabbing in leaf chaining as well
+            // TODO: this blocking acquisition may no longer to deadlock-free
+            // once there are deletions
+            next->latch.lock_shared();
+            DEBUG("latch R acquire %p", static_cast<void*>(next));
+            leaf->latch.unlock_shared();
+            DEBUG("latch R release %p", static_cast<void*>(leaf));
+            leaf = next;
+        } else {
+            leaf->latch.unlock_shared();
+            DEBUG("latch R release %p", static_cast<void*>(leaf));
+            return nrecords;
         }
     }
-
-    // wrapping up for the last leaf and last internal node that could
-    // possibly be left out
-    if (records.size() % nkeys != 0) {
-        memcpy(leaf.content, content, (1 + leafpos * 2) * sizeof(uint64_t));
-        leaf.header.nkeys = leafpos;
-        leaf.header.next = 0;
-        if (!pager->WritePage(leaves.back(), &leaf))
-            throw GarnerException("failed to write leaf page in load");
-
-        size_t search_idx = (itnlpos == 0) ? 0 : (itnlpos * 2 - 1);
-        ItnlPageInject(itnl, search_idx, content[1], leaves[leaves.size() - 2],
-                       leaves.back());
-    }
-    if (itnl.header.nkeys >= degree)
-        SplitPage(path.back(), itnl, path);
-    else if (!pager->WritePage(path.back(), &itnl))
-        throw GarnerException("failed to write internal page in load");
 }
 
 template <typename K, typename V>
 void BPTree<K, V>::PrintStats(bool print_pages) {
     BPTreeStats stats;
-    pager->CheckStats(stats);
-    std::cout << stats << std::endl;
+    stats.npages = all_pages.size();
+    stats.npages_itnl = 0;
+    stats.npages_leaf = 0;
+    stats.nkeys_itnl = 0;
+    stats.nkeys_leaf = 0;
 
-    if (print_pages) {
-        Page page;
-        for (uint64_t pageid = 0; pageid < stats.npages; ++pageid) {
-            if (!pager->ReadPage(pageid, &page))
-                throw GarnerException("failed to read page for stats");
-            std::cout << " " << pageid << " - " << page << std::endl;
+    if (print_pages) std::cout << "Pages:" << std::endl;
+
+    // scan through all pages
+    for (auto* page : all_pages) {
+        if (page->type == PAGE_ROOT || page->type == PAGE_ITNL) {
+            stats.npages_itnl++;
+            stats.nkeys_itnl += page->NumKeys();
+        } else if (page->type == PAGE_LEAF) {
+            stats.npages_leaf++;
+            stats.nkeys_leaf += page->NumKeys();
+        } else
+            throw GarnerException("unknown page type encountered");
+
+        if (print_pages) {
+            printf(" %p ", static_cast<void*>(page));
+            if (page->type == PAGE_ROOT) {
+                std::cout << *reinterpret_cast<PageRoot<K, V>*>(page)
+                          << std::endl;
+            } else if (page->type == PAGE_ITNL) {
+                std::cout << *reinterpret_cast<PageItnl<K, V>*>(page)
+                          << std::endl;
+            } else {
+                std::cout << *reinterpret_cast<PageLeaf<K, V>*>(page)
+                          << std::endl;
+            }
         }
     }
+
+    // if tree only has one page, root is the only leaf
+    if (stats.npages == 1) {
+        assert(stats.npages_itnl == 1);
+        assert(stats.npages_leaf == 0);
+        assert(stats.nkeys_leaf == 0);
+        stats.nkeys_leaf = stats.nkeys_itnl;
+        stats.nkeys_itnl = 0;
+        stats.npages_leaf = 1;
+        stats.npages_itnl = 0;
+    }
+
+    assert(stats.npages == stats.npages_itnl + stats.npages_leaf);
+    std::cout << stats << std::endl;
 }
 
 }  // namespace garner

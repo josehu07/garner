@@ -1,15 +1,29 @@
 cmake_minimum_required(VERSION 3.16)
+
 project(garner)
 set(CMAKE_CXX_STANDARD 20)
+
+find_package(Threads)
+
+if(NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "")
+    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "" FORCE)
+endif()
+
+add_compile_definitions("$<$<CONFIG:RELEASE>:NDEBUG>")
+add_compile_options(-Wall -Wextra -Wpedantic -Werror)
 
 # Garner DB library.
 add_subdirectory(garner)
 
 # Client, testing, and benchmarking executables.
-add_subdirectory(clients)
+add_subdirectory(tests)
+add_subdirectory(bench)
 
 # Tests:
 enable_testing()
 add_test(
-    NAME FuzzyTest
-    COMMAND $<TARGET_FILE:fuzzy_test> -f /tmp/garner_fuzzy_test_temp.txt)
+    NAME TestSingleBPTree
+    COMMAND $<TARGET_FILE:test_single_bptree>)
+add_test(
+    NAME TestConcurBPTree
+    COMMAND $<TARGET_FILE:test_concur_bptree>)

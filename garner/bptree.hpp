@@ -1,86 +1,87 @@
-// BPTree -- simple B+ tree class.
+// BPTree -- simple concurrent in-memory B+ tree class.
 
+#include <algorithm>
 #include <cassert>
 #include <cstring>
 #include <iostream>
 #include <limits>
+#include <mutex>
 #include <new>
+#include <set>
+#include <shared_mutex>
 #include <stdexcept>
 #include <string>
 #include <tuple>
 #include <vector>
 
 #include "common.hpp"
-#include "format.hpp"
-#include "pager.hpp"
+#include "page.hpp"
 
 #pragma once
 
 namespace garner {
 
 /**
- * Single-file backed simple B+ tree. Non thread-safe. Supporting only
- * integral key and value types within 64-bit width.
+ * Simple concurrent in-memory B+ tree.
  */
 template <typename K, typename V>
 class BPTree {
-    friend GarnerException;
-    friend BPTreeStats;
-    friend Pager;
-
    private:
-    const std::string filename;
-    int fd = -1;
+    /** Latch mode during traversal. */
+    typedef enum LatchMode { LATCH_READ, LATCH_WRITE, LATCH_NONE } LatchMode;
 
-    const size_t degree = MAXNKEYS;
+    // max number of keys per node page
+    const size_t degree = 0;
 
-    Pager* pager = nullptr;
+    // pointer to root page, set at initiailization
+    PageRoot<K, V>* root = nullptr;
 
-    /** Reopen the backing file with possibly different flags. */
-    void ReopenBackingFile(int flags = 0);
-
-    /**
-     * Search in page for the closest key that is <= given key.
-     * Returns the index to the key in content array, or 0 if all existing
-     * keys are greater than given key.
-     */
-    size_t PageSearchKey(const Page& page, K key);
+    // set of all pages allocated; this is for simplicity
+    std::set<Page<K>*> all_pages;
+    std::mutex all_pages_lock;
 
     /**
-     * Insert a key-value pair into leaf page, shifting array content if
-     * necessary. serach_idx should be calculated through PageSearchKey.
+     * Allocate a new page of specific type.
      */
-    void LeafPageInject(Page& page, size_t search_idx, K key, V value);
+    PageLeaf<K, V>* NewPageLeaf();
+    PageItnl<K, V>* NewPageItnl();
 
     /**
-     * Insert a key into internal node (carrying its left and right child
-     * pageids), shifting array content if necessary. serach_idx should
-     * be calculated through PageSearchKey.
+     * Returns true if given page is safe from structural mutations in
+     * concurrent latching, otherwise false.
      */
-    void ItnlPageInject(Page& page, size_t search_idx, K key, uint64_t lpageid,
-                        uint64_t rpageid);
+    bool IsConcurrencySafe(const Page<K>* page) const;
 
     /**
      * Do B+ tree search to traverse through internal nodes and find the
      * correct leaf node.
-     * Returns a tuple, where the first element is a vector of node pageids
-     * starting from root to the searched leaf node, and the second element
-     * being the key's index within the last-level internal node.
+     *
+     * Does "latch crabbing" for safe concurrency:
+     * https://15445.courses.cs.cmu.edu/fall2018/slides/09-indexconcurrency.pdf
+     * After return, proper latches will stay held according to latch mode.
+     *
+     * Returns a tuple of two vectors: (path, write_latched_pages)
+     * - path: list of node pages starting from root to the searched leaf node.
+     * - write_latched_pages: list of pages still latched in write mode
      */
-    std::tuple<std::vector<uint64_t>, size_t> TraverseToLeaf(K key);
+    std::tuple<std::vector<Page<K>*>, std::vector<Page<K>*>> TraverseToLeaf(
+        const K& key, LatchMode latch_mode);
 
     /**
      * Split the given page into two siblings, and propagate one new key
      * up to the parent node. May trigger cascading splits. The path
-     * argument is a list of internal node pageids, starting root, leading
+     * argument is a list of internal node pages, starting from root, leading
      * to the node to be split.
+     *
+     * Must have write latches already held on possibly affected pages.
+     *
      * After this function returns, the path vector will be updated to
      * reflect the new path to the right sibling node.
      */
-    void SplitPage(uint64_t pageid, Page& page, std::vector<uint64_t>& path);
+    void SplitPage(Page<K>* page, std::vector<Page<K>*>& path);
 
    public:
-    BPTree(const std::string& filename, size_t degree);
+    BPTree(size_t degree);
     ~BPTree();
 
     /**
@@ -94,14 +95,14 @@ class BPTree {
      * Returns false if search failed or key not found.
      * Exceptions might be thrown.
      */
-    bool Get(K key, V& value);
+    bool Get(const K& key, V& value);
 
     /**
-     * Delete the record mathcing key.
+     * Delete the record matching key.
      * Returns true if key found, otherwise false.
      * Exceptions might be thrown.
      */
-    bool Delete(K key);
+    bool Delete(const K& key);
 
     /**
      * Do a range scan over an inclusive key range [lkey, rkey], and
@@ -109,19 +110,14 @@ class BPTree {
      * Returns the number of records found within range.
      * Exceptions might be thrown.
      */
-    size_t Scan(K lkey, K rkey, std::vector<std::tuple<K, V>>& results);
+    size_t Scan(const K& lkey, const K& rkey,
+                std::vector<std::tuple<K, V>>& results);
 
     /**
-     * Bulk-load a collection of records into an empty B+ tree instance.
-     * Only works on a new empty backing file. The records vector must be
-     * sorted on key in increasing order and must contain no duplicate
-     * keys, otherwise an exception will be thrown.
-     */
-    void Load(const std::vector<std::tuple<K, V>>& records);
-
-    /**
-     * Scan the whole backing file and print statistics.
+     * Scan the whole B+-tree and print statistics.
      * If print_pages is true, also prints content of all pages.
+     *
+     * For simplicity, this method only for debugging and is NOT thread-safe.
      */
     void PrintStats(bool print_pages = false);
 };

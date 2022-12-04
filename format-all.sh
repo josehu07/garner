@@ -1,6 +1,6 @@
 #!/bin/bash
 
-DIRS="garner clients"
+DIRS="garner tests bench"
 
 function format_dir() {
     for FILE in $(find $@ -name '*.h' -or -name '*.hpp' -or -name '*.hh' \
