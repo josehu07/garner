@@ -21,8 +21,10 @@ struct Record {
     // user value
     V value;
 
-    Record() : latch(), value() {}
-    Record(V value) : latch(), value(value) {}
+    // version number
+    uint64_t version = 0;
+
+    Record() : latch(), value(), version(0) {}
 
     Record(const Record&) = delete;
     Record& operator=(const Record&) = delete;
@@ -30,13 +32,10 @@ struct Record {
     ~Record() = default;
 };
 
-template <typename K>
-std::ostream& operator<<(std::ostream& s, const Record<K>& record) {
+template <typename V>
+std::ostream& operator<<(std::ostream& s, const Record<V>& record) {
     s << "Record{value=" << record.value << "}";
     return s;
 }
 
 }  // namespace garner
-
-// Include template implementation in-place.
-#include "record.tpl.hpp"

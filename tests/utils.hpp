@@ -4,17 +4,19 @@
 
 #pragma once
 
-class FuzzyTestException : public std::exception {
+class FuzzTestException : public std::exception {
     std::string what_msg;
 
    public:
-    FuzzyTestException(std::string&& what_msg) : what_msg(what_msg) {}
-    ~FuzzyTestException() = default;
+    FuzzTestException(std::string&& what_msg) : what_msg(what_msg) {}
+    ~FuzzTestException() = default;
 
     const char* what() const noexcept override { return what_msg.c_str(); }
 };
 
-// generate random string
+/**
+ * Generate random alpha-numerical string.
+ */
 static constexpr char alphanum[] =
     "0123456789"
     "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -31,3 +33,42 @@ static std::string gen_rand_string(std::mt19937& gen, size_t len) {
 
     return str;
 }
+
+/**
+ * Garner request struct for testing.
+ */
+typedef enum GarnerOp { GET, PUT, DELETE, SCAN, UNKNOWN } GarnerOp;
+
+struct GarnerReq {
+    GarnerOp op;
+    std::string key;
+    std::string rkey;
+    std::string value;
+    bool get_found;
+    std::vector<std::tuple<std::string, std::string>> scan_result;
+
+    GarnerReq() = delete;
+    GarnerReq(GarnerOp op, std::string key)
+        : op(op), key(key), rkey(), value(), get_found(false), scan_result() {
+        assert(op == GET);
+    }
+    GarnerReq(GarnerOp op, std::string key, std::string val)
+        : op(op),
+          key(key),
+          rkey(),
+          value(val),
+          get_found(false),
+          scan_result() {
+        assert(op == PUT);
+    }
+    GarnerReq(GarnerOp op, std::string lkey, std::string rkey,
+              std::vector<std::tuple<std::string, std::string>> scan_result)
+        : op(op),
+          key(lkey),
+          rkey(rkey),
+          value(),
+          get_found(false),
+          scan_result(scan_result) {
+        assert(op == SCAN);
+    }
+};

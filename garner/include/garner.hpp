@@ -7,6 +7,17 @@
 
 namespace garner {
 
+// forward declare TxnCxt type
+// Clients should never need to call any methods on this type, but rather
+// just passing pointers around through Garner's public interface.
+template <typename V>
+class TxnCxt;
+
+/**
+ * Transaction concurrency control protocols enum.
+ */
+typedef enum TxnProtocol { PROTOCOL_NONE, PROTOCOL_SILO } TxnProtocol;
+
 /**
  * Garner in-memory KV-DB interface.
  *
@@ -27,7 +38,7 @@ class Garner {
      *
      * The returned struct should be deleted when no longer needed.
      */
-    static Garner* Open(size_t degree);
+    static Garner* Open(size_t degree, TxnProtocol protocol);
 
     Garner() = default;
 
@@ -37,37 +48,78 @@ class Garner {
     virtual ~Garner() = default;
 
     /**
+     * Start a transaction by creating a transaction context to be passed in
+     * to subsequent operations of the transactio.
+     *
+     * Exceptions might be thrown.
+     */
+    virtual TxnCxt<VType>* StartTxn() = 0;
+
+    /**
+     * Attempt validation and commit of transaction.
+     * Returns true if commited, or false if aborted.
+     */
+    virtual bool FinishTxn(TxnCxt<VType>* txn) = 0;
+
+    /**
      * Insert a key-value pair into B+ tree.
      *
-     * Exceptions might be thrown.
-     */
-    virtual void Put(KType key, VType value) = 0;
-
-    /**
-     * Search for a key, fill given reference with value.
-     * Returns false if search failed or key not found.
+     * If txn is nullptr, this operation will automatically be treated as a
+     * single-op transaction.
+     *
+     * If txn is nullptr, returns true if successfully committed, or false if
+     * aborted. If txn is given, always returns false.
      *
      * Exceptions might be thrown.
      */
-    virtual bool Get(const KType& key, VType& value) = 0;
+    virtual bool Put(KType key, VType value, TxnCxt<VType>* txn = nullptr) = 0;
 
     /**
-     * Delete the record matching key.
-     * Returns true if key found, otherwise false.
+     * Search for a key, fill given reference with value and set found to true.
+     * If not found, set found to false.
+     *
+     * If txn is nullptr, this operation will automatically be treated as a
+     * single-op transaction.
+     *
+     * If txn is nullptr, returns true if successfully committed, or false if
+     * aborted. If txn is given, always returns false.
      *
      * Exceptions might be thrown.
      */
-    virtual bool Delete(const KType& key) = 0;
+    virtual bool Get(const KType& key, VType& value, bool& found,
+                     TxnCxt<VType>* txn = nullptr) = 0;
+
+    /**
+     * Delete the record matching key and set found to true. If not found, set
+     * found to false.
+     *
+     * If txn is nullptr, this operation will automatically be treated as a
+     * single-op transaction.
+     *
+     * If txn is nullptr, returns true if successfully committed, or false if
+     * aborted. If txn is given, always returns false.
+     *
+     * Exceptions might be thrown.
+     */
+    virtual bool Delete(const KType& key, bool& found,
+                        TxnCxt<VType>* txn = nullptr) = 0;
 
     /**
      * Do a range scan over an inclusive key range [lkey, rkey], and
-     * append found records to the given vector.
-     * Returns the number of records found within range.
+     * append found records to the given vector. Sets nrecords to the number
+     * of records found within range.
+     *
+     * If txn is nullptr, this operation will automatically be treated as a
+     * single-op transaction.
+     *
+     * If txn is nullptr, returns true if successfully committed, or false if
+     * aborted. If txn is given, always returns false.
      *
      * Exceptions might be thrown.
      */
-    virtual size_t Scan(const KType& lkey, const KType& rkey,
-                        std::vector<std::tuple<KType, VType>>& results) = 0;
+    virtual bool Scan(const KType& lkey, const KType& rkey,
+                      std::vector<std::tuple<KType, VType>>& results,
+                      size_t& nrecords, TxnCxt<VType>* txn = nullptr) = 0;
 
     /**
      * Scan the whole B+-tree and print statistics. If print_pages is true,

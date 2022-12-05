@@ -24,10 +24,9 @@ static constexpr size_t NUM_FOUND_GETS = 15;
 static constexpr size_t NUM_NOTFOUND_GETS = 5;
 static constexpr size_t NUM_SCANS = 10;
 
-static void fuzzy_test_round(bool do_puts) {
-    auto* gn = garner::Garner::Open(TEST_DEGREE);
+static void fuzz_test_round(bool do_puts) {
+    auto* gn = garner::Garner::Open(TEST_DEGREE, garner::PROTOCOL_NONE);
 
-    std::srand(std::time(NULL));
     std::random_device rd;
     std::mt19937 gen(rd());
 
@@ -39,13 +38,13 @@ static void fuzzy_test_round(bool do_puts) {
         std::uniform_int_distribution<size_t> rand_nputs_large(6 * 6 * 2 + 1,
                                                                6 * 6 * 6 * 3);
         unsigned choice = std::uniform_int_distribution<unsigned>(1, 3)(gen);
-        NUM_PUTS = (choice == 1) ? rand_nputs_small(gen)
-                                 : (choice == 2) ? rand_nputs_medium(gen)
-                                                 : rand_nputs_large(gen);
+        NUM_PUTS = (choice == 1)   ? rand_nputs_small(gen)
+                   : (choice == 2) ? rand_nputs_medium(gen)
+                                   : rand_nputs_large(gen);
     }
 
-    std::cout << " Degree=" << TEST_DEGREE << " "
-              << "#puts=" << NUM_PUTS << std::endl;
+    std::cout << " Degree=" << TEST_DEGREE << " #puts=" << NUM_PUTS
+              << std::endl;
 
     std::map<std::string, std::string> refmap;
     std::vector<std::string> refvec;
@@ -61,7 +60,7 @@ static void fuzzy_test_round(bool do_puts) {
         std::string val = "", refval = "null";
         bool found = false, reffound = false;
         // std::cout << "Get " << key;
-        found = gn->Get(key, val);
+        gn->Get(key, val, found);
         // if (found)
         //     std::cout << " found " << val << std::endl;
         // else
@@ -69,12 +68,12 @@ static void fuzzy_test_round(bool do_puts) {
         reffound = refmap.contains(key);
         if (reffound) refval = refmap[key];
         if (reffound != found) {
-            throw FuzzyTestException("Get mismatch: key=" + key +
-                                     " found=" + (found ? "T" : "F") +
-                                     " reffound=" + (found ? "T" : "F"));
+            throw FuzzTestException("Get mismatch: key=" + key +
+                                    " found=" + (found ? "T" : "F") +
+                                    " reffound=" + (found ? "T" : "F"));
         } else if (found && reffound && refval != val) {
-            throw FuzzyTestException("Get mismatch: key=" + key +
-                                     " val=" + val + " refval=" + refval);
+            throw FuzzTestException("Get mismatch: key=" + key + " val=" + val +
+                                    " refval=" + refval);
         }
     };
 
@@ -82,7 +81,7 @@ static void fuzzy_test_round(bool do_puts) {
         std::vector<std::tuple<std::string, std::string>> results, refresults;
         size_t nrecords = 0, refnrecords = 0;
         // std::cout << "Scan " << lkey << "-" << rkey;
-        nrecords = gn->Scan(lkey, rkey, results);
+        gn->Scan(lkey, rkey, results, nrecords);
         // std::cout << " got " << nrecords << std::endl;
         for (auto&& it = refmap.lower_bound(lkey);
              it != refmap.upper_bound(rkey); ++it) {
@@ -90,7 +89,7 @@ static void fuzzy_test_round(bool do_puts) {
             refnrecords++;
         }
         if (refnrecords != nrecords) {
-            throw FuzzyTestException(
+            throw FuzzTestException(
                 "Scan mismatch: lkey=" + lkey + " rkey=" + rkey +
                 " nrecords=" + std::to_string(nrecords) +
                 " refnrecords=" + std::to_string(refnrecords));
@@ -99,13 +98,13 @@ static void fuzzy_test_round(bool do_puts) {
                 auto [key, val] = results[i];
                 auto [refkey, refval] = refresults[i];
                 if (refkey != key) {
-                    throw FuzzyTestException("Scan mismatch: lkey=" + lkey +
-                                             " rkey=" + rkey + " key=" + key +
-                                             " refkey=" + refkey);
+                    throw FuzzTestException("Scan mismatch: lkey=" + lkey +
+                                            " rkey=" + rkey + " key=" + key +
+                                            " refkey=" + refkey);
                 } else if (refval != val) {
-                    throw FuzzyTestException("Scan mismatch: lkey=" + lkey +
-                                             " rkey=" + rkey + " val=" + val +
-                                             " refval=" + refval);
+                    throw FuzzTestException(
+                        "Scan mismatch: lkey=" + lkey + " rkey=" + rkey +
+                        " key=" + key + " val=" + val + " refval=" + refval);
                 }
             }
         }
@@ -188,9 +187,11 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
+    std::srand(std::time(NULL));
+
     for (unsigned round = 0; round < NUM_ROUNDS; ++round) {
         std::cout << "Round " << round << " --" << std::endl;
-        fuzzy_test_round(round != 0);
+        fuzz_test_round(round != 0);
     }
 
     return 0;

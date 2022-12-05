@@ -18,46 +18,11 @@
 #include "garner.hpp"
 #include "utils.hpp"
 
-static constexpr unsigned NUM_THREADS = 8;
 static constexpr unsigned NUM_ROUNDS = 5;
-static constexpr size_t NUM_OPS_PER_THREAD = 5000;
 static constexpr size_t KEY_LEN = 2;
 
-typedef enum GarnerOp { GET, PUT, DELETE, SCAN, UNKNOWN } GarnerOp;
-
-struct GarnerReq {
-    GarnerOp op;
-    std::string key;
-    std::string rkey;
-    std::string value;
-    bool get_found;
-    std::vector<std::tuple<std::string, std::string>> scan_result;
-
-    GarnerReq() = delete;
-    GarnerReq(GarnerOp op, std::string key)
-        : op(op), key(key), rkey(), value(), get_found(false), scan_result() {
-        assert(op == GET);
-    }
-    GarnerReq(GarnerOp op, std::string key, std::string val)
-        : op(op),
-          key(key),
-          rkey(),
-          value(val),
-          get_found(false),
-          scan_result() {
-        assert(op == PUT);
-    }
-    GarnerReq(GarnerOp op, std::string lkey, std::string rkey,
-              std::vector<std::tuple<std::string, std::string>> scan_result)
-        : op(op),
-          key(lkey),
-          rkey(rkey),
-          value(),
-          get_found(false),
-          scan_result(scan_result) {
-        assert(op == SCAN);
-    }
-};
+static unsigned NUM_THREADS = 8;
+static size_t NUM_OPS_PER_THREAD = 5000;
 
 static void client_thread_func(unsigned tidx, garner::Garner* gn,
                                std::vector<GarnerReq>* reqs) {
@@ -122,7 +87,8 @@ static void client_thread_func(unsigned tidx, garner::Garner* gn,
         GarnerReq req = GenRandomReq();
 
         if (req.op == GET) {
-            bool found = gn->Get(req.key, get_buf);
+            bool found;
+            gn->Get(req.key, get_buf, found);
             req.value = get_buf;
             req.get_found = found;
             get_buf = "";
@@ -130,7 +96,8 @@ static void client_thread_func(unsigned tidx, garner::Garner* gn,
             gn->Put(req.key, req.value);
             putvec.push_back(req.key);
         } else {
-            gn->Scan(req.key, req.rkey, scan_result);
+            size_t nrecords;
+            gn->Scan(req.key, req.rkey, scan_result, nrecords);
             req.scan_result = scan_result;
             scan_result.clear();
         }
@@ -161,32 +128,36 @@ static void integrity_check(garner::Garner* gn,
     std::vector<std::tuple<std::string, std::string>> scan_result;
     std::string min_key(KEY_LEN, alphanum[0]);
     std::string max_key(KEY_LEN, alphanum[sizeof(alphanum) - 2]);
-    gn->Scan(min_key, max_key, scan_result);
+    size_t nrecords;
+    gn->Scan(min_key, max_key, scan_result, nrecords);
     if (scan_result.size() == 0)
-        throw FuzzyTestException("Scan returned 0 results");
+        throw FuzzTestException("Scan returned 0 results");
+    if (scan_result.size() != nrecords)
+        throw FuzzTestException("Scan returned incorrect #results: nrecords=" +
+                                std::to_string(nrecords) + " len(result)=" +
+                                std::to_string(scan_result.size()));
 
     for (auto [key, val] : scan_result) {
         if (!final_valid_vals.contains(key)) {
-            throw FuzzyTestException("key " + key +
-                                     " was never put by any thread");
+            throw FuzzTestException("key " + key +
+                                    " was never put by any thread");
         }
 
         auto dash_it = std::find(val.begin(), val.end(), '-');
         if (val.size() < 3 || dash_it == val.begin() || dash_it == val.end() ||
             dash_it == val.end() - 1) {
-            throw FuzzyTestException("value has invalid format: " + val);
+            throw FuzzTestException("value has invalid format: " + val);
         }
 
         unsigned tidx = std::stoul(val.substr(0, dash_it - val.begin()));
         if (!final_valid_vals[key].contains(tidx)) {
-            throw FuzzyTestException("key " + key +
-                                     " was never put by thread " +
-                                     std::to_string(tidx));
+            throw FuzzTestException("key " + key + " was never put by thread " +
+                                    std::to_string(tidx));
         }
         if (final_valid_vals[key][tidx] != val) {
-            throw FuzzyTestException("mismatch value for key " + key +
-                                     ": val=" + val +
-                                     " refval=" + final_valid_vals[key][tidx]);
+            throw FuzzTestException("mismatch value for key " + key +
+                                    ": val=" + val +
+                                    " refval=" + final_valid_vals[key][tidx]);
         }
     }
 }
@@ -194,12 +165,10 @@ static void integrity_check(garner::Garner* gn,
 static void concurrency_test_round() {
     constexpr size_t TEST_DEGREE = 6;
 
-    auto* gn = garner::Garner::Open(TEST_DEGREE);
+    auto* gn = garner::Garner::Open(TEST_DEGREE, garner::PROTOCOL_NONE);
 
-    std::srand(std::time(NULL));
-
-    std::cout << " Degree=" << TEST_DEGREE << " "
-              << "#threads=" << NUM_THREADS << std::endl;
+    std::cout << " Degree=" << TEST_DEGREE << " #threads=" << NUM_THREADS
+              << " #ops/thread=" << NUM_OPS_PER_THREAD << std::endl;
 
     // gn->PrintStats(true);
 
@@ -231,13 +200,19 @@ int main(int argc, char* argv[]) {
 
     cxxopts::Options cmd_args(argv[0]);
     cmd_args.add_options()("h,help", "print help message",
-                           cxxopts::value<bool>(help)->default_value("false"));
+                           cxxopts::value<bool>(help)->default_value("false"))(
+        "t,threads", "number of threads",
+        cxxopts::value<unsigned>(NUM_THREADS)->default_value("8"))(
+        "o,ops", "number of ops per thread per round",
+        cxxopts::value<size_t>(NUM_OPS_PER_THREAD)->default_value("5000"));
     auto result = cmd_args.parse(argc, argv);
 
     if (help) {
         printf("%s", cmd_args.help().c_str());
         return 0;
     }
+
+    std::srand(std::time(NULL));
 
     for (unsigned round = 0; round < NUM_ROUNDS; ++round) {
         std::cout << "Round " << round << " --" << std::endl;

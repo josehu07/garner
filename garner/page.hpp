@@ -22,7 +22,7 @@ typedef enum PageType {
     PAGE_LEAF = 3,  // leaf node storing pointers to records
 } PageType;
 
-std::string PageTypeStr(PageType type) {
+static inline std::string PageTypeStr(PageType type) {
     switch (type) {
         case PAGE_EMPTY:
             return "empty";
@@ -66,7 +66,7 @@ struct Page {
     Page(const Page&) = delete;
     Page& operator=(const Page&) = delete;
 
-    ~Page() = default;
+    virtual ~Page() = default;
 
     /**
      * Get number of keys in page.

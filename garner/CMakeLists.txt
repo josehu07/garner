@@ -10,7 +10,9 @@ set(GARNER_SRC
     "page.hpp"
     "page.tpl.hpp"
     "record.hpp"
-    "record.tpl.hpp"
+    "txn.hpp"
+    "txn_silo.hpp"
+    "txn_silo.tpl.hpp"
 )
 add_library(garner ${GARNER_SRC})
 

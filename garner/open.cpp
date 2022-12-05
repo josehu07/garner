@@ -4,8 +4,8 @@
 
 namespace garner {
 
-Garner* Garner::Open(size_t degree) {
-    GarnerImpl* impl = new GarnerImpl(degree);
+Garner* Garner::Open(size_t degree, TxnProtocol protocol) {
+    GarnerImpl* impl = new GarnerImpl(degree, protocol);
     if (impl == nullptr)
         throw GarnerException("failed to allocate GarnerImpl instance");
 

@@ -298,7 +298,7 @@ void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path) {
 }
 
 template <typename K, typename V>
-void BPTree<K, V>::Put(K key, V value) {
+void BPTree<K, V>::Put(K key, V value, TxnCxt<V>* txn) {
     DEBUG("req Put %s val %s", StreamStr(key).c_str(),
           StreamStr(value).c_str());
 
@@ -330,18 +330,19 @@ void BPTree<K, V>::Put(K key, V value) {
         DEBUG("page latch W release %p", static_cast<void*>(page));
     }
 
-    // set record's value
-    record->latch.lock();
-    DEBUG("record latch W acquire %p", static_cast<void*>(record));
-    record->value = value;
-
-    // release record write latch
-    record->latch.unlock();
-    DEBUG("record latch W release %p", static_cast<void*>(record));
+    // if no concurrency control, write now; otherwise call handler
+    if (txn == nullptr) {
+        record->latch.lock();
+        DEBUG("record latch W acquire %p", static_cast<void*>(record));
+        record->value = value;
+        record->latch.unlock();
+        DEBUG("record latch W release %p", static_cast<void*>(record));
+    } else
+        txn->ExecWriteRecord(record, std::move(value));
 }
 
 template <typename K, typename V>
-bool BPTree<K, V>::Get(const K& key, V& value) {
+bool BPTree<K, V>::Get(const K& key, V& value, TxnCxt<V>* txn) {
     DEBUG("req Get %s", StreamStr(key).c_str());
 
     // traverse to the correct leaf node and read
@@ -353,8 +354,8 @@ bool BPTree<K, V>::Get(const K& key, V& value) {
     // search in leaf node for key
     ssize_t idx = leaf->SearchKey(key);
     if (idx == -1 || leaf->keys[idx] != key) {
-        // not found
-        // release held read latch
+        // not found; release held read latch
+        // current concurrency control DOES NOT prevent phantoms
         leaf->latch.unlock_shared();
         DEBUG("page latch R release %p", static_cast<void*>(leaf));
         return false;
@@ -372,22 +373,28 @@ bool BPTree<K, V>::Get(const K& key, V& value) {
     leaf->latch.unlock_shared();
     DEBUG("page latch R release %p", static_cast<void*>(leaf));
 
-    // fetch value in record
-    record->latch.lock_shared();
-    value = record->value;
-    record->latch.unlock_shared();
+    // fetch value in record; if has concurrency control, use the algorithm's
+    // read protocol
+    if (txn == nullptr) {
+        record->latch.lock_shared();
+        value = record->value;
+        record->latch.unlock_shared();
+    } else
+        txn->ExecReadRecord(record, value);
     return true;
 }
 
 template <typename K, typename V>
-bool BPTree<K, V>::Delete(__attribute__((unused)) const K& key) {
+bool BPTree<K, V>::Delete([[maybe_unused]] const K& key,
+                          [[maybe_unused]] TxnCxt<V>* txn) {
     // TODO: implement me
     throw GarnerException("Delete not implemented yet!");
 }
 
 template <typename K, typename V>
 size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
-                          std::vector<std::tuple<K, V>>& results) {
+                          std::vector<std::tuple<K, V>>& results,
+                          TxnCxt<V>* txn) {
     DEBUG("req Scan %s to %s", StreamStr(lkey).c_str(),
           StreamStr(rkey).c_str());
 
@@ -440,9 +447,18 @@ size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
                 record = reinterpret_cast<PageLeaf<K, V>*>(leaf)->records[idx];
             assert(record != nullptr);
 
-            record->latch.lock_shared();
-            results.push_back(std::make_tuple(std::move(key), record->value));
-            record->latch.unlock_shared();
+            // if has concurrency control, use algorithm's read protocol
+            // current concurrency control DOES NOT prevent phantoms
+            V value;
+            if (txn == nullptr) {
+                record->latch.lock_shared();
+                value = record->value;
+                record->latch.unlock_shared();
+            } else
+                txn->ExecReadRecord(record, value);
+
+            results.push_back(
+                std::make_tuple(std::move(key), std::move(value)));
             nrecords++;
         }
 

@@ -25,3 +25,17 @@ target_include_directories(test_concur_bptree
     PUBLIC
         ${PROJECT_SOURCE_DIR}/garner/include)
 target_link_libraries(test_concur_bptree garner pthread)
+
+set(TEST_SINGLE_TXNRUN_SRC
+    "test_single_txnrun.cpp"
+    "cxxopts.hpp"
+    "utils.hpp"
+)
+add_executable(test_single_txnrun ${TEST_SINGLE_TXNRUN_SRC})
+
+target_include_directories(test_single_txnrun
+    PRIVATE
+        ${CMAKE_CURRENT_LIST_DIR}
+    PUBLIC
+        ${PROJECT_SOURCE_DIR}/garner/include)
+target_link_libraries(test_single_txnrun garner)

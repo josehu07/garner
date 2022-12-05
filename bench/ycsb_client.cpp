@@ -39,13 +39,11 @@ static std::tuple<std::vector<GarnerReq>, size_t> read_input_trace(
             degree = std::stoul(key);
             continue;
         }
-        GarnerOp op = (opcode == "GET")
-                          ? GET
-                          : (opcode == "PUT")
-                                ? PUT
-                                : (opcode == "DELETE")
-                                      ? DELETE
-                                      : (opcode == "SCAN") ? SCAN : UNKNOWN;
+        GarnerOp op = (opcode == "GET")      ? GET
+                      : (opcode == "PUT")    ? PUT
+                      : (opcode == "DELETE") ? DELETE
+                      : (opcode == "SCAN")   ? SCAN
+                                             : UNKNOWN;
         std::string rkey;
         if (op == SCAN) input >> rkey;
         reqs.push_back(GarnerReq{.op = op, .key = key, .rkey = rkey});
@@ -65,7 +63,9 @@ static std::tuple<unsigned, unsigned> execute_input_trace(
     std::string value, std::vector<double>& microsecs) {
     unsigned cnt = 0, not_ok_cnt = 0;
     std::string get_buf;
+    bool get_found, delete_found;
     std::vector<std::tuple<std::string, std::string>> scan_buf;
+    size_t scan_nrecords;
 
     for (const auto& req : reqs) {
         try {
@@ -75,15 +75,15 @@ static std::tuple<unsigned, unsigned> execute_input_trace(
                     garner->Put(req.key, value);
                     break;
                 case GET:
-                    garner->Get(req.key, get_buf);
+                    garner->Get(req.key, get_buf, get_found);
                     break;
                 case DELETE:
-                    garner->Delete(req.key);
+                    garner->Delete(req.key, delete_found);
                     break;
                 case SCAN:
                     scan_buf.clear();
                     time_start = std::chrono::high_resolution_clock::now();
-                    garner->Scan(req.key, req.rkey, scan_buf);
+                    garner->Scan(req.key, req.rkey, scan_buf, scan_nrecords);
                     break;
                 case UNKNOWN:
                 default:
@@ -161,7 +161,7 @@ int main(int argc, char* argv[]) {
     std::tie(reqs, degree) = read_input_trace(trace);
     std::string value = "ABCDEFGHIJ";
 
-    auto* gn = garner::Garner::Open(degree);
+    auto* gn = garner::Garner::Open(degree, garner::PROTOCOL_NONE);
     std::vector<double> microsecs;
     auto [cnt, _] = execute_input_trace(gn, reqs, std::move(value), microsecs);
     std::cout << "Finished " << cnt << " requests." << std::endl << std::endl;
