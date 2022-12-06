@@ -16,11 +16,11 @@
 #include "garner.hpp"
 #include "utils.hpp"
 
-static constexpr unsigned NUM_ROUNDS = 20;
 static constexpr size_t TEST_DEGREE = 8;
 static constexpr size_t KEY_LEN = 8;
 static constexpr size_t VAL_LEN = 10;
 
+static unsigned NUM_ROUNDS = 20;
 static size_t NUM_OPS = 1000;
 static size_t MAX_OPS_PER_TXN = 20;
 
@@ -122,6 +122,10 @@ static void single_test_round(garner::TxnProtocol protocol) {
             refnrecords++;
         }
         if (refnrecords != nrecords) {
+            for (auto&& [key, val] : results)
+                std::cout << " ??? " << key << " " << val << std::endl;
+            for (auto&& [refkey, refval] : refresults)
+                std::cout << " !!! " << refkey << " " << refval << std::endl;
             throw FuzzTestException(
                 "Scan mismatch: lkey=" + lkey + " rkey=" + rkey +
                 " nrecords=" + std::to_string(nrecords) +
@@ -203,6 +207,8 @@ int main(int argc, char* argv[]) {
     cxxopts::Options cmd_args(argv[0]);
     cmd_args.add_options()("h,help", "print help message",
                            cxxopts::value<bool>(help)->default_value("false"))(
+        "r,rounds", "number of rounds",
+        cxxopts::value<unsigned>(NUM_ROUNDS)->default_value("20"))(
         "p,protocol", "concurency control protocol",
         cxxopts::value<std::string>(protocol_str)->default_value("silo"))(
         "o,ops", "number of ops per round",

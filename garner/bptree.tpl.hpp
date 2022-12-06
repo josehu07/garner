@@ -377,11 +377,13 @@ bool BPTree<K, V>::Get(const K& key, V& value, TxnCxt<V>* txn) {
     // read protocol
     if (txn == nullptr) {
         record->latch.lock_shared();
+        DEBUG("record latch R acquire %p", static_cast<void*>(record));
         value = record->value;
         record->latch.unlock_shared();
+        DEBUG("record latch R release %p", static_cast<void*>(record));
+        return true;
     } else
-        txn->ExecReadRecord(record, value);
-    return true;
+        return txn->ExecReadRecord(record, value);
 }
 
 template <typename K, typename V>
@@ -450,16 +452,22 @@ size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
             // if has concurrency control, use algorithm's read protocol
             // current concurrency control DOES NOT prevent phantoms
             V value;
+            bool valid = false;
             if (txn == nullptr) {
                 record->latch.lock_shared();
+                DEBUG("record latch R acquire %p", static_cast<void*>(record));
                 value = record->value;
                 record->latch.unlock_shared();
+                DEBUG("record latch R release %p", static_cast<void*>(record));
+                valid = true;
             } else
-                txn->ExecReadRecord(record, value);
+                valid = txn->ExecReadRecord(record, value);
 
-            results.push_back(
-                std::make_tuple(std::move(key), std::move(value)));
-            nrecords++;
+            if (valid) {
+                results.push_back(
+                    std::make_tuple(std::move(key), std::move(value)));
+                nrecords++;
+            }
         }
 
         // move on to the right sibling

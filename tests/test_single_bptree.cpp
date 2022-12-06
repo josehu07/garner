@@ -16,13 +16,14 @@
 #include "garner.hpp"
 #include "utils.hpp"
 
-static constexpr unsigned NUM_ROUNDS = 100;
 static constexpr size_t TEST_DEGREE = 8;
 static constexpr size_t KEY_LEN = 8;
 static constexpr size_t VAL_LEN = 10;
 static constexpr size_t NUM_FOUND_GETS = 15;
 static constexpr size_t NUM_NOTFOUND_GETS = 5;
 static constexpr size_t NUM_SCANS = 10;
+
+static unsigned NUM_ROUNDS = 100;
 
 static void fuzz_test_round(bool do_puts) {
     auto* gn = garner::Garner::Open(TEST_DEGREE, garner::PROTOCOL_NONE);
@@ -179,7 +180,9 @@ int main(int argc, char* argv[]) {
 
     cxxopts::Options cmd_args(argv[0]);
     cmd_args.add_options()("h,help", "print help message",
-                           cxxopts::value<bool>(help)->default_value("false"));
+                           cxxopts::value<bool>(help)->default_value("false"))(
+        "r,rounds", "number of rounds",
+        cxxopts::value<unsigned>(NUM_ROUNDS)->default_value("100"));
     auto result = cmd_args.parse(argc, argv);
 
     if (help) {

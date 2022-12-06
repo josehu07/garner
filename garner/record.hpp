@@ -22,9 +22,14 @@ struct Record {
     V value;
 
     // version number
+    // effective only when concurerncy control is on
     uint64_t version = 0;
 
-    Record() : latch(), value(), version(0) {}
+    // valid flag, set at first write
+    // effective only when concurerncy control is on
+    bool valid = false;
+
+    Record() : latch(), value(), version(0), valid(false) {}
 
     Record(const Record&) = delete;
     Record& operator=(const Record&) = delete;

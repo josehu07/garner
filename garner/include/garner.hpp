@@ -57,9 +57,15 @@ class Garner {
 
     /**
      * Attempt validation and commit of transaction.
+     *
+     * The arguments are for returning the serialization point order for
+     * testing purposes.
+     *
      * Returns true if commited, or false if aborted.
      */
-    virtual bool FinishTxn(TxnCxt<VType>* txn) = 0;
+    virtual bool FinishTxn(TxnCxt<VType>* txn,
+                           std::atomic<uint64_t>* ser_counter = nullptr,
+                           uint64_t* ser_order = nullptr) = 0;
 
     /**
      * Insert a key-value pair into B+ tree.

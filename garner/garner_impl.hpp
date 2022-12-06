@@ -1,5 +1,6 @@
 // GarnerImpl -- internal implementation of Garner DB interface struct.
 
+#include <atomic>
 #include <string>
 #include <vector>
 
@@ -34,7 +35,9 @@ class GarnerImpl : public Garner {
     ~GarnerImpl();
 
     TxnCxt<VType>* StartTxn() override;
-    bool FinishTxn(TxnCxt<VType>* txn) override;
+    bool FinishTxn(TxnCxt<VType>* txn,
+                   std::atomic<uint64_t>* ser_counter = nullptr,
+                   uint64_t* ser_order = nullptr) override;
 
     bool Put(KType key, VType value, TxnCxt<VType>* txn = nullptr) override;
     bool Get(const KType& key, VType& value, bool& found,

@@ -46,10 +46,19 @@ struct GarnerReq {
     std::string value;
     bool get_found;
     std::vector<std::tuple<std::string, std::string>> scan_result;
+    bool committed;
+    uint64_t ser_order;
 
     GarnerReq() = delete;
     GarnerReq(GarnerOp op, std::string key)
-        : op(op), key(key), rkey(), value(), get_found(false), scan_result() {
+        : op(op),
+          key(key),
+          rkey(),
+          value(),
+          get_found(false),
+          scan_result(),
+          committed(false),
+          ser_order(0) {
         assert(op == GET);
     }
     GarnerReq(GarnerOp op, std::string key, std::string val)
@@ -58,7 +67,9 @@ struct GarnerReq {
           rkey(),
           value(val),
           get_found(false),
-          scan_result() {
+          scan_result(),
+          committed(false),
+          ser_order(0) {
         assert(op == PUT);
     }
     GarnerReq(GarnerOp op, std::string lkey, std::string rkey,
@@ -68,7 +79,9 @@ struct GarnerReq {
           rkey(rkey),
           value(),
           get_found(false),
-          scan_result(scan_result) {
+          scan_result(scan_result),
+          committed(false),
+          ser_order(0) {
         assert(op == SCAN);
     }
 };

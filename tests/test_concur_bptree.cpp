@@ -18,9 +18,9 @@
 #include "garner.hpp"
 #include "utils.hpp"
 
-static constexpr unsigned NUM_ROUNDS = 5;
 static constexpr size_t KEY_LEN = 2;
 
+static unsigned NUM_ROUNDS = 5;
 static unsigned NUM_THREADS = 8;
 static size_t NUM_OPS_PER_THREAD = 5000;
 
@@ -185,7 +185,7 @@ static void concurrency_test_round() {
     for (unsigned tidx = 0; tidx < NUM_THREADS; ++tidx) threads[tidx].join();
 
     // run an (incomplete) integrity check against thread results
-    std::cout << " Doing basic integrity check... " << std::endl;
+    std::cout << " Doing basic integrity check..." << std::endl;
     integrity_check(gn, std::move(thread_reqs));
 
     // gn->PrintStats(true);
@@ -201,6 +201,8 @@ int main(int argc, char* argv[]) {
     cxxopts::Options cmd_args(argv[0]);
     cmd_args.add_options()("h,help", "print help message",
                            cxxopts::value<bool>(help)->default_value("false"))(
+        "r,rounds", "number of rounds",
+        cxxopts::value<unsigned>(NUM_ROUNDS)->default_value("5"))(
         "t,threads", "number of threads",
         cxxopts::value<unsigned>(NUM_THREADS)->default_value("8"))(
         "o,ops", "number of ops per thread per round",

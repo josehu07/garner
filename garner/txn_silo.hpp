@@ -1,7 +1,10 @@
 // TxnSilo -- simplified Silo concurrency control protocol.
 
+#include <algorithm>
+#include <atomic>
 #include <iostream>
 #include <map>
+#include <vector>
 
 #include "common.hpp"
 #include "record.hpp"
@@ -37,8 +40,10 @@ class TxnSilo : public TxnCxt<V> {
 
     /**
      * Save record to read set, set value to its current read value.
+     * Returns true if read is successful, or false if reading a phantom
+     * record inserted by some other transaction without filled value.
      */
-    void ExecReadRecord(Record<V>* record, V& value);
+    bool ExecReadRecord(Record<V>* record, V& value);
 
     /**
      * Save record to write set and locally remember attempted write value.
@@ -48,7 +53,8 @@ class TxnSilo : public TxnCxt<V> {
     /**
      * Silo validation and commit protocol.
      */
-    bool TryCommit();
+    bool TryCommit(std::atomic<uint64_t>* ser_counter = nullptr,
+                   uint64_t* ser_order = nullptr);
 
     template <typename VV>
     friend std::ostream& operator<<(std::ostream& s, const TxnSilo<VV>& txn);

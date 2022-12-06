@@ -32,11 +32,13 @@ TxnCxt<Garner::VType>* GarnerImpl::StartTxn() {
     return txn;
 }
 
-bool GarnerImpl::FinishTxn(TxnCxt<VType>* txn) {
+bool GarnerImpl::FinishTxn(TxnCxt<VType>* txn,
+                           std::atomic<uint64_t>* ser_counter,
+                           uint64_t* ser_order) {
     DEBUG("txn %p finishing", static_cast<void*>(txn));
     bool committed = false;
     if (txn != nullptr) {
-        committed = txn->TryCommit();
+        committed = txn->TryCommit(ser_counter, ser_order);
         delete txn;  // deallocate at finish
     }
     return committed;
