@@ -57,7 +57,7 @@ TODO
 ## TODO List
 
 - [x] Basic concurrent BPTree
-- [ ] Transaction manager
+- [x] Transaction manager
 - [ ] Basic HV-OCC protocol
 - [ ] Simple benchmarking
 - [ ] Try jemalloc/tcmalloc
