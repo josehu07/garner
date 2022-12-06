@@ -6,9 +6,13 @@ set(GARNER_SRC
     "common.cpp"
     "garner_impl.hpp"
     "garner_impl.tpl.hpp"
-    "lib.cpp"
+    "open.cpp"
     "page.hpp"
     "page.tpl.hpp"
+    "record.hpp"
+    "txn.hpp"
+    "txn_silo.hpp"
+    "txn_silo.tpl.hpp"
 )
 add_library(garner ${GARNER_SRC})
 

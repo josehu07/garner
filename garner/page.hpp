@@ -5,6 +5,9 @@
 #include <shared_mutex>
 #include <vector>
 
+#include "common.hpp"
+#include "record.hpp"
+
 #pragma once
 
 namespace garner {
@@ -16,10 +19,10 @@ typedef enum PageType {
     PAGE_EMPTY = 0,
     PAGE_ROOT = 1,  // root node of tree
     PAGE_ITNL = 2,  // internal node other than root
-    PAGE_LEAF = 3,  // leaf node storing values
+    PAGE_LEAF = 3,  // leaf node storing pointers to records
 } PageType;
 
-std::string PageTypeStr(PageType type) {
+static inline std::string PageTypeStr(PageType type) {
     switch (type) {
         case PAGE_EMPTY:
             return "empty";
@@ -63,10 +66,12 @@ struct Page {
     Page(const Page&) = delete;
     Page& operator=(const Page&) = delete;
 
-    ~Page() = default;
+    virtual ~Page() = default;
 
     /**
      * Get number of keys in page.
+     *
+     * Must have read latch held.
      */
     size_t NumKeys() const;
 
@@ -75,6 +80,8 @@ struct Page {
      * index, or -1 if all existing keys are greater than given key.
      * Assumes keys vector is sorted accendingly, which should always be the
      * case.
+     *
+     * Must have read latch held.
      */
     ssize_t SearchKey(const K& key) const;
 };
@@ -97,13 +104,13 @@ struct PageLeaf : public Page<K> {
     // pointer to right sibling
     Page<K>* next = nullptr;
 
-    // values according to sorted keys, keys[0] -> values[0], etc.
-    std::vector<V> values;
+    // records according to sorted keys, keys[0] -> records[0], etc.
+    std::vector<Record<V>*> records;
 
     PageLeaf() = delete;
     PageLeaf(size_t degree)
-        : Page<K>(PAGE_LEAF, degree), next(nullptr), values() {
-        values.reserve(degree);
+        : Page<K>(PAGE_LEAF, degree), next(nullptr), records() {
+        records.reserve(degree);
     }
 
     PageLeaf(const PageLeaf&) = delete;
@@ -112,10 +119,15 @@ struct PageLeaf : public Page<K> {
     ~PageLeaf() = default;
 
     /**
-     * Insert a key-value pair into non-full leaf page, shifting array content
+     * Insert a key-record pair into non-full leaf page, shifting array content
      * if necessary. serach_idx should be calculated through PageSearchKey.
+     * Returns a pointer to the corresponding record struct. This record might
+     * have existed before the injection if key already existed, or might be
+     * just newly allocated.
+     *
+     * Must have page latch held in write mode when calling this.
      */
-    void Inject(ssize_t search_idx, K key, V value);
+    Record<V>* Inject(ssize_t search_idx, K key);
 };
 
 template <typename K, typename V>
@@ -124,8 +136,8 @@ std::ostream& operator<<(std::ostream& s, const PageLeaf<K, V>& page) {
       << ",nkeys=" << page.keys.size();
     s << ",keys=[";
     for (auto&& k : page.keys) s << k << ",";
-    s << "],values=[";
-    for (auto&& v : page.values) s << v << ",";
+    s << "],records=[";
+    for (auto* v : page.records) s << *v << ",";
     s << "],next=" << page.next << "}";
     return s;
 }
@@ -154,6 +166,8 @@ struct PageItnl : public Page<K> {
      * Insert a key into non-empty internal node (carrying its left and right
      * child page pointers), shifting array content if necessary. search_idx
      * should be calculated through PageSearchKey.
+     *
+     * Must have page latch held in write mode when calling this.
      */
     void Inject(ssize_t search_idx, K key, Page<K>* lpage, Page<K>* rpage);
 };
@@ -165,7 +179,7 @@ std::ostream& operator<<(std::ostream& s, const PageItnl<K, V>& page) {
     s << ",keys=[";
     for (auto&& k : page.keys) s << k << ",";
     s << "],children=[";
-    for (auto&& c : page.children) s << c << ",";
+    for (auto* c : page.children) s << c << ",";
     s << "]}";
     return s;
 }
@@ -179,13 +193,13 @@ struct PageRoot : public Page<K> {
     unsigned depth = 0;
 
     // page content sorted according to key
-    std::vector<V> values;           // depth == 1: root is the only leaf
-    std::vector<Page<K>*> children;  // depth > 1: root is non-leaf
+    std::vector<Record<V>*> records;  // depth == 1: root is the only leaf
+    std::vector<Page<K>*> children;   // depth > 1: root is non-leaf
 
     PageRoot() = delete;
     PageRoot(size_t degree)
-        : Page<K>(PAGE_ROOT, degree), depth(1), values(), children() {
-        values.reserve(degree);
+        : Page<K>(PAGE_ROOT, degree), depth(1), records(), children() {
+        records.reserve(degree);
         children.reserve(degree + 1);
     }
 
@@ -197,7 +211,7 @@ struct PageRoot : public Page<K> {
     /**
      * Root page may act as either type, depending on depth.
      */
-    void Inject(ssize_t search_idx, K key, V value);
+    Record<V>* Inject(ssize_t search_idx, K key);
     void Inject(ssize_t search_idx, K key, Page<K>* lpage, Page<K>* rpage);
 };
 
@@ -207,10 +221,10 @@ std::ostream& operator<<(std::ostream& s, const PageRoot<K, V>& page) {
       << ",nkeys=" << page.keys.size();
     s << ",keys=[";
     for (auto&& k : page.keys) s << k << ",";
-    s << "],values=[";
-    for (auto&& v : page.values) s << v << ",";
+    s << "],records=[";
+    for (auto* v : page.records) s << *v << ",";
     s << "],children=[";
-    for (auto&& c : page.children) s << c << ",";
+    for (auto* c : page.children) s << c << ",";
     s << "],depth=" << page.depth << "}";
     return s;
 }

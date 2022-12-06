@@ -24,7 +24,20 @@ BPTree<K, V>::BPTree(size_t degree)
 template <typename K, typename V>
 BPTree<K, V>::~BPTree() {
     std::lock_guard<std::mutex> lg(all_pages_lock);
-    for (auto* page : all_pages) delete page;
+    for (auto* page : all_pages) {
+        // deallocate all records
+        if (page->type == PAGE_LEAF) {
+            auto* leaf = reinterpret_cast<PageLeaf<K, V>*>(page);
+            for (auto* record : leaf->records) delete record;
+        } else if (page->type == PAGE_ROOT) {
+            auto* root = reinterpret_cast<PageRoot<K, V>*>(page);
+            if (root->depth == 1)
+                for (auto* record : root->records) delete record;
+        }
+
+        // deallocate page
+        delete page;
+    }
 }
 
 template <typename K, typename V>
@@ -63,10 +76,10 @@ BPTree<K, V>::TraverseToLeaf(const K& key, LatchMode latch_mode) {
 
     if (latch_mode == LATCH_READ) {
         page->latch.lock_shared();
-        DEBUG("latch R acquire %p", static_cast<void*>(page));
+        DEBUG("page latch R acquire %p", static_cast<void*>(page));
     } else if (latch_mode == LATCH_WRITE) {
         page->latch.lock();
-        DEBUG("latch W acquire %p", static_cast<void*>(page));
+        DEBUG("page latch W acquire %p", static_cast<void*>(page));
         write_latched_pages.push_back(page);
     }
 
@@ -96,18 +109,19 @@ BPTree<K, V>::TraverseToLeaf(const K& key, LatchMode latch_mode) {
         // latch crabbing
         if (latch_mode == LATCH_READ) {
             child->latch.lock_shared();
-            DEBUG("latch R acquire %p", static_cast<void*>(child));
+            DEBUG("page latch R acquire %p", static_cast<void*>(child));
             page->latch.unlock_shared();
-            DEBUG("latch R release %p", static_cast<void*>(page));
+            DEBUG("page latch R release %p", static_cast<void*>(page));
         } else if (latch_mode == LATCH_WRITE) {
             child->latch.lock();
-            DEBUG("latch W acquire %p", static_cast<void*>(child));
+            DEBUG("page latch W acquire %p", static_cast<void*>(child));
             // if child is safe, release all ancestors' write latches
             if (IsConcurrencySafe(child)) {
                 assert(write_latched_pages.back() == page);
                 for (auto* ancestor : write_latched_pages) {
                     ancestor->latch.unlock();
-                    DEBUG("latch W release %p", static_cast<void*>(ancestor));
+                    DEBUG("page latch W release %p",
+                          static_cast<void*>(ancestor));
                 }
                 write_latched_pages.clear();
             }
@@ -149,8 +163,8 @@ void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path) {
             // populate left child
             std::copy(spage->keys.begin(), spage->keys.begin() + mpos,
                       std::back_inserter(lpage->keys));
-            std::copy(spage->values.begin(), spage->values.begin() + mpos,
-                      std::back_inserter(lpage->values));
+            std::copy(spage->records.begin(), spage->records.begin() + mpos,
+                      std::back_inserter(lpage->records));
 
             // set left child's next pointer
             lpage->next = rpage;
@@ -158,12 +172,12 @@ void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path) {
             // populate right child
             std::copy(spage->keys.begin() + mpos, spage->keys.end(),
                       std::back_inserter(rpage->keys));
-            std::copy(spage->values.begin() + mpos, spage->values.end(),
-                      std::back_inserter(rpage->values));
+            std::copy(spage->records.begin() + mpos, spage->records.end(),
+                      std::back_inserter(rpage->records));
 
             // populate split node with first key of right child
             spage->keys.clear();
-            spage->values.clear();
+            spage->records.clear();
             spage->keys.push_back(rpage->keys[0]);
 
         } else {
@@ -223,8 +237,8 @@ void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path) {
             // populate right child
             std::copy(spage->keys.begin() + mpos, spage->keys.end(),
                       std::back_inserter(rpage->keys));
-            std::copy(spage->values.begin() + mpos, spage->values.end(),
-                      std::back_inserter(rpage->values));
+            std::copy(spage->records.begin() + mpos, spage->records.end(),
+                      std::back_inserter(rpage->records));
 
             // set right child's next pointer
             rpage->next = spage->next;
@@ -232,8 +246,8 @@ void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path) {
             // trim current node
             mkey = rpage->keys[0];
             spage->keys.erase(spage->keys.begin() + mpos, spage->keys.end());
-            spage->values.erase(spage->values.begin() + mpos,
-                                spage->values.end());
+            spage->records.erase(spage->records.begin() + mpos,
+                                 spage->records.end());
 
             // make current node's next link to new right node
             spage->next = rpage;
@@ -284,7 +298,7 @@ void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path) {
 }
 
 template <typename K, typename V>
-void BPTree<K, V>::Put(K key, V value) {
+void BPTree<K, V>::Put(K key, V value, TxnCxt<V>* txn) {
     DEBUG("req Put %s val %s", StreamStr(key).c_str(),
           StreamStr(value).c_str());
 
@@ -295,28 +309,40 @@ void BPTree<K, V>::Put(K key, V value) {
     assert(path.size() > 0);
     Page<K>* leaf = path.back();
 
-    // inject key-value pair into the leaf node
+    // inject key into the leaf node and get pointer to record
     assert(leaf->NumKeys() < degree);
+    Record<V>* record = nullptr;
     ssize_t idx = leaf->SearchKey(key);
     if (leaf->type == PAGE_ROOT)
-        reinterpret_cast<PageRoot<K, V>*>(leaf)->Inject(idx, key, value);
+        record = reinterpret_cast<PageRoot<K, V>*>(leaf)->Inject(idx, key);
     else
-        reinterpret_cast<PageLeaf<K, V>*>(leaf)->Inject(idx, key, value);
+        record = reinterpret_cast<PageLeaf<K, V>*>(leaf)->Inject(idx, key);
+    assert(record != nullptr);
 
     // if this leaf node becomes full, do split
     if (leaf->NumKeys() >= degree) SplitPage(leaf, path);
 
-    // release held write latch(es)
+    // release held page write latch(es)
     assert(write_latched_pages.size() > 0);
     assert(write_latched_pages.back() == leaf);
     for (auto* page : write_latched_pages) {
         page->latch.unlock();
-        DEBUG("latch W release %p", static_cast<void*>(page));
+        DEBUG("page latch W release %p", static_cast<void*>(page));
     }
+
+    // if no concurrency control, write now; otherwise call handler
+    if (txn == nullptr) {
+        record->latch.lock();
+        DEBUG("record latch W acquire %p", static_cast<void*>(record));
+        record->value = value;
+        record->latch.unlock();
+        DEBUG("record latch W release %p", static_cast<void*>(record));
+    } else
+        txn->ExecWriteRecord(record, std::move(value));
 }
 
 template <typename K, typename V>
-bool BPTree<K, V>::Get(const K& key, V& value) {
+bool BPTree<K, V>::Get(const K& key, V& value, TxnCxt<V>* txn) {
     DEBUG("req Get %s", StreamStr(key).c_str());
 
     // traverse to the correct leaf node and read
@@ -328,34 +354,49 @@ bool BPTree<K, V>::Get(const K& key, V& value) {
     // search in leaf node for key
     ssize_t idx = leaf->SearchKey(key);
     if (idx == -1 || leaf->keys[idx] != key) {
-        // not found
-        // release held read latch
+        // not found; release held read latch
+        // current concurrency control DOES NOT prevent phantoms
         leaf->latch.unlock_shared();
-        DEBUG("latch R release %p", static_cast<void*>(leaf));
+        DEBUG("page latch R release %p", static_cast<void*>(leaf));
         return false;
     }
 
-    // found match key, fetch value
+    // found match key, fetch record
+    Record<V>* record = nullptr;
     if (leaf->type == PAGE_ROOT)
-        value = reinterpret_cast<PageRoot<K, V>*>(leaf)->values[idx];
+        record = reinterpret_cast<PageRoot<K, V>*>(leaf)->records[idx];
     else
-        value = reinterpret_cast<PageLeaf<K, V>*>(leaf)->values[idx];
+        record = reinterpret_cast<PageLeaf<K, V>*>(leaf)->records[idx];
+    assert(record != nullptr);
 
-    // release held read latch
+    // release held page read latch
     leaf->latch.unlock_shared();
-    DEBUG("latch R release %p", static_cast<void*>(leaf));
-    return true;
+    DEBUG("page latch R release %p", static_cast<void*>(leaf));
+
+    // fetch value in record; if has concurrency control, use the algorithm's
+    // read protocol
+    if (txn == nullptr) {
+        record->latch.lock_shared();
+        DEBUG("record latch R acquire %p", static_cast<void*>(record));
+        value = record->value;
+        record->latch.unlock_shared();
+        DEBUG("record latch R release %p", static_cast<void*>(record));
+        return true;
+    } else
+        return txn->ExecReadRecord(record, value);
 }
 
 template <typename K, typename V>
-bool BPTree<K, V>::Delete(__attribute__((unused)) const K& _key) {
+bool BPTree<K, V>::Delete([[maybe_unused]] const K& key,
+                          [[maybe_unused]] TxnCxt<V>* txn) {
     // TODO: implement me
     throw GarnerException("Delete not implemented yet!");
 }
 
 template <typename K, typename V>
 size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
-                          std::vector<std::tuple<K, V>>& results) {
+                          std::vector<std::tuple<K, V>>& results,
+                          TxnCxt<V>* txn) {
     DEBUG("req Scan %s to %s", StreamStr(lkey).c_str(),
           StreamStr(rkey).c_str());
 
@@ -376,7 +417,7 @@ size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
         if (leaf->NumKeys() == 0) {
             assert(leaf->type == PAGE_ROOT);
             leaf->latch.unlock_shared();
-            DEBUG("latch R release %p", static_cast<void*>(leaf));
+            DEBUG("page latch R release %p", static_cast<void*>(leaf));
             return 0;
         }
 
@@ -397,18 +438,36 @@ size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
             K key = leaf->keys[idx];
             if (key > rkey) {
                 leaf->latch.unlock_shared();
-                DEBUG("latch R release %p", static_cast<void*>(leaf));
+                DEBUG("page latch R release %p", static_cast<void*>(leaf));
                 return nrecords;
             }
 
-            V value;
+            Record<V>* record;
             if (leaf->type == PAGE_ROOT)
-                value = reinterpret_cast<PageRoot<K, V>*>(leaf)->values[idx];
+                record = reinterpret_cast<PageRoot<K, V>*>(leaf)->records[idx];
             else
-                value = reinterpret_cast<PageLeaf<K, V>*>(leaf)->values[idx];
-            results.push_back(
-                std::make_tuple(std::move(key), std::move(value)));
-            nrecords++;
+                record = reinterpret_cast<PageLeaf<K, V>*>(leaf)->records[idx];
+            assert(record != nullptr);
+
+            // if has concurrency control, use algorithm's read protocol
+            // current concurrency control DOES NOT prevent phantoms
+            V value;
+            bool valid = false;
+            if (txn == nullptr) {
+                record->latch.lock_shared();
+                DEBUG("record latch R acquire %p", static_cast<void*>(record));
+                value = record->value;
+                record->latch.unlock_shared();
+                DEBUG("record latch R release %p", static_cast<void*>(record));
+                valid = true;
+            } else
+                valid = txn->ExecReadRecord(record, value);
+
+            if (valid) {
+                results.push_back(
+                    std::make_tuple(std::move(key), std::move(value)));
+                nrecords++;
+            }
         }
 
         // move on to the right sibling
@@ -416,7 +475,7 @@ size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
             Page<K>* next = reinterpret_cast<PageLeaf<K, V>*>(leaf)->next;
             if (next == nullptr) {
                 leaf->latch.unlock_shared();
-                DEBUG("latch R release %p", static_cast<void*>(leaf));
+                DEBUG("page latch R release %p", static_cast<void*>(leaf));
                 return nrecords;
             }
 
@@ -424,13 +483,13 @@ size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
             // TODO: this blocking acquisition may no longer to deadlock-free
             // once there are deletions
             next->latch.lock_shared();
-            DEBUG("latch R acquire %p", static_cast<void*>(next));
+            DEBUG("page latch R acquire %p", static_cast<void*>(next));
             leaf->latch.unlock_shared();
-            DEBUG("latch R release %p", static_cast<void*>(leaf));
+            DEBUG("page latch R release %p", static_cast<void*>(leaf));
             leaf = next;
         } else {
             leaf->latch.unlock_shared();
-            DEBUG("latch R release %p", static_cast<void*>(leaf));
+            DEBUG("page latch R release %p", static_cast<void*>(leaf));
             return nrecords;
         }
     }
@@ -438,6 +497,8 @@ size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
 
 template <typename K, typename V>
 void BPTree<K, V>::PrintStats(bool print_pages) {
+    std::lock_guard<std::mutex> lg(all_pages_lock);
+
     BPTreeStats stats;
     stats.npages = all_pages.size();
     stats.npages_itnl = 0;

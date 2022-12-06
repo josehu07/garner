@@ -27,3 +27,9 @@ add_test(
 add_test(
     NAME TestConcurBPTree
     COMMAND $<TARGET_FILE:test_concur_bptree>)
+add_test(
+    NAME TestSingleTxnRun
+    COMMAND $<TARGET_FILE:test_single_txnrun>)
+add_test(
+    NAME TestConcurTxnRun
+    COMMAND $<TARGET_FILE:test_concur_txnrun>)

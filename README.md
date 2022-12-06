@@ -30,15 +30,23 @@ cmake -DCMAKE_BUILD_TYPE=Release ..
 make -j
 ```
 
+Build in debug mode:
+
+```bash
+mkdir build-debug && cd build-debug
+cmake -DCMAKE_BUILD_TYPE=Debug ..
+make -j
+```
+
 ## Run
 
-Run all tests:
+Run all tests (recommend release mode build):
 
 ```bash
 ctest
 ```
 
-Run individual test:
+Run an individual test for detailed output:
 
 ```bash
 ./tests/test_<name> -h
@@ -49,9 +57,10 @@ TODO
 ## TODO List
 
 - [x] Basic concurrent BPTree
-- [ ] Transaction manager
+- [x] Transaction manager
 - [ ] Basic HV-OCC protocol
 - [ ] Simple benchmarking
+- [ ] Try jemalloc/tcmalloc
 - [ ] Better latching to reduce root contention
 - [ ] Implement Delete & related concurrency
 
