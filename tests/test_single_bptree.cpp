@@ -39,9 +39,9 @@ static void fuzz_test_round(bool do_puts) {
         std::uniform_int_distribution<size_t> rand_nputs_large(6 * 6 * 2 + 1,
                                                                6 * 6 * 6 * 3);
         unsigned choice = std::uniform_int_distribution<unsigned>(1, 3)(gen);
-        NUM_PUTS = (choice == 1)   ? rand_nputs_small(gen)
-                   : (choice == 2) ? rand_nputs_medium(gen)
-                                   : rand_nputs_large(gen);
+        NUM_PUTS = (choice == 1) ? rand_nputs_small(gen)
+                                 : (choice == 2) ? rand_nputs_medium(gen)
+                                                 : rand_nputs_large(gen);
     }
 
     std::cout << " Degree=" << TEST_DEGREE << " #puts=" << NUM_PUTS
