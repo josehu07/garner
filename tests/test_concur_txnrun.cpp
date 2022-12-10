@@ -351,6 +351,7 @@ static void serializability_check(
         }
     }
 
+    assert(minheap.empty());
     assert(nreqs >= ncommitted);
     size_t naborted = nreqs - ncommitted;
     double abort_rate =

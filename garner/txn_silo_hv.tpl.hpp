@@ -64,10 +64,25 @@ void TxnSiloHV<K, V>::ExecWriteRecord(Record<V>* record, V value) {
 }
 
 template <typename K, typename V>
-void TxnSiloHV<K, V>::ExecReadTraverseNode([[maybe_unused]] Page<K>* page) {}
+void TxnSiloHV<K, V>::ExecReadTraverseNode(Page<K>* page) {
+    // append to read list
+    assert(!std::any_of(
+        read_list.begin(), read_list.end(),
+        [&](const ReadListItem& r) { return !r.is_record && r.page == page; }));
+    read_list.push_back(ReadListItem{
+        .is_record = false, .page = page, .version = page->hv_ver});
+}
 
 template <typename K, typename V>
-void TxnSiloHV<K, V>::ExecWriteTraverseNode([[maybe_unused]] Page<K>* page) {}
+void TxnSiloHV<K, V>::ExecWriteTraverseNode(Page<K>* page) {
+    // append to write list
+    assert(!std::any_of(write_list.begin(), write_list.end(),
+                        [&](const WriteListItem& w) {
+                            return !w.is_record && w.page == page;
+                        }));
+    write_list.push_back(
+        WriteListItem{.is_record = false, .page = page, .value = V()});
+}
 
 template <typename K, typename V>
 bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
@@ -99,8 +114,10 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
             witem.record->latch.lock();
             DEBUG("record latch W acquire %p",
                   static_cast<void*>(witem.record));
+        } else {
+            ++witem.page->hv_sem;
+            DEBUG("page hv_sem increment %p", static_cast<void*>(witem.page));
         }
-        // TODO: add internal node semaphore logic
     }
 
     auto release_all_write_latches = [&]() {
@@ -109,8 +126,11 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
                 witem.record->latch.unlock();
                 DEBUG("record latch W release %p",
                       static_cast<void*>(witem.record));
+            } else {
+                --witem.page->hv_sem;
+                DEBUG("page hv_sem decrement %p",
+                      static_cast<void*>(witem.page));
             }
-            // TODO: add internal node semaphore logic
         }
     };
 
@@ -155,8 +175,9 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
                 release_all_write_latches();
                 return false;
             }
+        } else {
+            // TODO: skip proper children nodes from loop
         }
-        // TODO: add internal node semaphore logic
     }
 
     // generate new version number, one greater than all versions seen by
@@ -165,8 +186,13 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
     for (auto&& ritem : read_list)
         if (ritem.version > new_version) new_version = ritem.version;
     for (auto&& witem : write_list) {
-        if (witem.record->version > new_version)
-            new_version = witem.record->version;
+        if (witem.is_record) {
+            if (witem.record->version > new_version)
+                new_version = witem.record->version;
+        } else {
+            uint64_t hv_ver = witem.page->hv_ver;
+            if (hv_ver > new_version) new_version = hv_ver;
+        }
     }
     new_version++;
 
@@ -180,8 +206,10 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
             witem.record->latch.unlock();
             DEBUG("record latch W release %p",
                   static_cast<void*>(witem.record));
+        } else {
+            witem.page->hv_ver = new_version;
+            --witem.page->hv_sem;
         }
-        // TODO: add internal node semaphore logic
     }
 
     return true;

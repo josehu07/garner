@@ -1,6 +1,7 @@
 // B+-tree node page format definitions.
 
 #include <algorithm>
+#include <atomic>
 #include <iostream>
 #include <shared_mutex>
 #include <vector>
@@ -54,12 +55,16 @@ struct Page {
     // read-write mutex as latch
     std::shared_mutex latch;
 
+    // tree node semaphore & version number for hierarchical validation
+    std::atomic<uint64_t> hv_sem;
+    std::atomic<uint64_t> hv_ver;
+
     // sorted list of keys
     std::vector<K> keys;
 
     Page() = delete;
     Page(PageType type, size_t degree)
-        : type(type), degree(degree), latch(), keys() {
+        : type(type), degree(degree), latch(), hv_sem(0), hv_ver(0), keys() {
         keys.reserve(degree);
     }
 
