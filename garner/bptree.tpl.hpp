@@ -298,7 +298,7 @@ void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path) {
 }
 
 template <typename K, typename V>
-void BPTree<K, V>::Put(K key, V value, TxnCxt<V>* txn) {
+void BPTree<K, V>::Put(K key, V value, TxnCxt<K, V>* txn) {
     DEBUG("req Put %s val %s", StreamStr(key).c_str(),
           StreamStr(value).c_str());
 
@@ -342,7 +342,7 @@ void BPTree<K, V>::Put(K key, V value, TxnCxt<V>* txn) {
 }
 
 template <typename K, typename V>
-bool BPTree<K, V>::Get(const K& key, V& value, TxnCxt<V>* txn) {
+bool BPTree<K, V>::Get(const K& key, V& value, TxnCxt<K, V>* txn) {
     DEBUG("req Get %s", StreamStr(key).c_str());
 
     // traverse to the correct leaf node and read
@@ -388,7 +388,7 @@ bool BPTree<K, V>::Get(const K& key, V& value, TxnCxt<V>* txn) {
 
 template <typename K, typename V>
 bool BPTree<K, V>::Delete([[maybe_unused]] const K& key,
-                          [[maybe_unused]] TxnCxt<V>* txn) {
+                          [[maybe_unused]] TxnCxt<K, V>* txn) {
     // TODO: implement me
     throw GarnerException("Delete not implemented yet!");
 }
@@ -396,7 +396,7 @@ bool BPTree<K, V>::Delete([[maybe_unused]] const K& key,
 template <typename K, typename V>
 size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
                           std::vector<std::tuple<K, V>>& results,
-                          TxnCxt<V>* txn) {
+                          TxnCxt<K, V>* txn) {
     DEBUG("req Scan %s to %s", StreamStr(lkey).c_str(),
           StreamStr(rkey).c_str());
 

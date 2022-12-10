@@ -13,14 +13,17 @@ GarnerImpl::GarnerImpl(size_t degree, TxnProtocol protocol)
 
 GarnerImpl::~GarnerImpl() { delete bptree; }
 
-TxnCxt<Garner::VType>* GarnerImpl::StartTxn() {
+TxnCxt<Garner::KType, Garner::VType>* GarnerImpl::StartTxn() {
     // allocate new TxnCxt struct
-    TxnCxt<VType>* txn = nullptr;
+    TxnCxt<KType, VType>* txn = nullptr;
     switch (protocol) {
         case PROTOCOL_NONE:
             return nullptr;
         case PROTOCOL_SILO:
-            txn = new TxnSilo<VType>();
+            txn = new TxnSilo<KType, VType>();
+            break;
+        case PROTOCOL_SILO_HV:
+            txn = new TxnSiloHV<KType, VType>();
             break;
         default:
             throw GarnerException("unknown transaction protocol type");
@@ -32,7 +35,7 @@ TxnCxt<Garner::VType>* GarnerImpl::StartTxn() {
     return txn;
 }
 
-bool GarnerImpl::FinishTxn(TxnCxt<VType>* txn,
+bool GarnerImpl::FinishTxn(TxnCxt<KType, VType>* txn,
                            std::atomic<uint64_t>* ser_counter,
                            uint64_t* ser_order) {
     DEBUG("txn %p finishing", static_cast<void*>(txn));
@@ -44,8 +47,8 @@ bool GarnerImpl::FinishTxn(TxnCxt<VType>* txn,
     return committed;
 }
 
-bool GarnerImpl::Put(KType key, VType value, TxnCxt<VType>* txn) {
-    TxnCxt<VType>* this_txn = txn;
+bool GarnerImpl::Put(KType key, VType value, TxnCxt<KType, VType>* txn) {
+    TxnCxt<KType, VType>* this_txn = txn;
     if (txn == nullptr) this_txn = StartTxn();
 
     bptree->Put(key, value, this_txn);
@@ -57,8 +60,8 @@ bool GarnerImpl::Put(KType key, VType value, TxnCxt<VType>* txn) {
 }
 
 bool GarnerImpl::Get(const KType& key, VType& value, bool& found,
-                     TxnCxt<VType>* txn) {
-    TxnCxt<VType>* this_txn = txn;
+                     TxnCxt<KType, VType>* txn) {
+    TxnCxt<KType, VType>* this_txn = txn;
     if (txn == nullptr) this_txn = StartTxn();
 
     found = bptree->Get(key, value, this_txn);
@@ -69,8 +72,9 @@ bool GarnerImpl::Get(const KType& key, VType& value, bool& found,
         return FinishTxn(this_txn);
 }
 
-bool GarnerImpl::Delete(const KType& key, bool& found, TxnCxt<VType>* txn) {
-    TxnCxt<VType>* this_txn = txn;
+bool GarnerImpl::Delete(const KType& key, bool& found,
+                        TxnCxt<KType, VType>* txn) {
+    TxnCxt<KType, VType>* this_txn = txn;
     if (txn == nullptr) this_txn = StartTxn();
 
     found = bptree->Delete(key, this_txn);
@@ -83,8 +87,8 @@ bool GarnerImpl::Delete(const KType& key, bool& found, TxnCxt<VType>* txn) {
 
 bool GarnerImpl::Scan(const KType& lkey, const KType& rkey,
                       std::vector<std::tuple<KType, VType>>& results,
-                      size_t& nrecords, TxnCxt<VType>* txn) {
-    TxnCxt<VType>* this_txn = txn;
+                      size_t& nrecords, TxnCxt<KType, VType>* txn) {
+    TxnCxt<KType, VType>* this_txn = txn;
     if (txn == nullptr) this_txn = StartTxn();
 
     nrecords = bptree->Scan(lkey, rkey, results, this_txn);

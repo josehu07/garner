@@ -4,7 +4,7 @@
 [![Build & Tests status](https://github.com/josehu07/garner/actions/workflows/build-n-tests.yml/badge.svg)](https://github.com/josehu07/garner/actions?query=josehu07%3Abuild_n_tests)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-Hierarchical validation in Silo-flavor OCC on a B+-tree index.
+Hierarchical validation in Silo-flavor optimistic concurrency control (OCC) on a B+-tree index.
 
 ## Build
 
@@ -61,6 +61,8 @@ TODO
 - [ ] Basic HV-OCC protocol
 - [ ] Simple benchmarking
 - [ ] Try jemalloc/tcmalloc
+- [ ] Remove shared_mutex in cases where an atomic is fine
+- [ ] Replace shared_mutex with userspace spinlock
 - [ ] Better latching to reduce root contention
 - [ ] Implement Delete & related concurrency
 

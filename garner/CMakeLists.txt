@@ -13,6 +13,8 @@ set(GARNER_SRC
     "txn.hpp"
     "txn_silo.hpp"
     "txn_silo.tpl.hpp"
+    "txn_silo_hv.hpp"
+    "txn_silo_hv.tpl.hpp"
 )
 add_library(garner ${GARNER_SRC})
 

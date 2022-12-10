@@ -92,7 +92,7 @@ class BPTree {
      *
      * Exceptions might be thrown.
      */
-    void Put(K key, V value, TxnCxt<V>* txn);
+    void Put(K key, V value, TxnCxt<K, V>* txn);
 
     /**
      * Search for a key, fill given reference with value.
@@ -100,7 +100,7 @@ class BPTree {
      *
      * Exceptions might be thrown.
      */
-    bool Get(const K& key, V& value, TxnCxt<V>* txn);
+    bool Get(const K& key, V& value, TxnCxt<K, V>* txn);
 
     /**
      * Delete the record matching key.
@@ -108,7 +108,7 @@ class BPTree {
      *
      * Exceptions might be thrown.
      */
-    bool Delete(const K& key, TxnCxt<V>* txn);
+    bool Delete(const K& key, TxnCxt<K, V>* txn);
 
     /**
      * Do a range scan over an inclusive key range [lkey, rkey], and
@@ -118,7 +118,7 @@ class BPTree {
      * Exceptions might be thrown.
      */
     size_t Scan(const K& lkey, const K& rkey,
-                std::vector<std::tuple<K, V>>& results, TxnCxt<V>* txn);
+                std::vector<std::tuple<K, V>>& results, TxnCxt<K, V>* txn);
 
     /**
      * Scan the whole B+-tree and print statistics. If print_pages is true,

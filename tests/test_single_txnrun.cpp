@@ -80,7 +80,7 @@ static void single_test_round(garner::TxnProtocol protocol) {
     std::vector<std::string> refvec;
 
     auto CheckedPut = [&](std::string key, std::string val,
-                          garner::TxnCxt<std::string>* txn) {
+                          garner::TxnCxt<std::string, std::string>* txn) {
         // std::cout << "Put " << key << " " << val << std::endl;
         gn->Put(key, val, txn);
         if (!refmap.contains(key)) refvec.push_back(key);
@@ -88,7 +88,7 @@ static void single_test_round(garner::TxnProtocol protocol) {
     };
 
     auto CheckedGet = [&](const std::string& key,
-                          garner::TxnCxt<std::string>* txn) {
+                          garner::TxnCxt<std::string, std::string>* txn) {
         std::string val = "", refval = "null";
         bool found = false, reffound = false;
         // std::cout << "Get " << key;
@@ -110,7 +110,7 @@ static void single_test_round(garner::TxnProtocol protocol) {
     };
 
     auto CheckedScan = [&](const std::string& lkey, const std::string& rkey,
-                           garner::TxnCxt<std::string>* txn) {
+                           garner::TxnCxt<std::string, std::string>* txn) {
         std::vector<std::tuple<std::string, std::string>> results, refresults;
         size_t nrecords = 0, refnrecords = 0;
         // std::cout << "Scan " << lkey << "-" << rkey;
@@ -232,6 +232,8 @@ int main(int argc, char* argv[]) {
         protocol = garner::PROTOCOL_NONE;
     else if (protocol_str == "silo")
         protocol = garner::PROTOCOL_SILO;
+    else if (protocol_str == "silo_hv")
+        protocol = garner::PROTOCOL_SILO_HV;
     else {
         std::cerr << "Error: unrecognized concurrency control protocol: "
                   << protocol_str << std::endl;

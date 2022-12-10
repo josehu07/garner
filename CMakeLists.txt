@@ -28,8 +28,14 @@ add_test(
     NAME TestConcurBPTree
     COMMAND $<TARGET_FILE:test_concur_bptree>)
 add_test(
-    NAME TestSingleTxnRun
-    COMMAND $<TARGET_FILE:test_single_txnrun>)
+    NAME TestSingleTxnRun_Silo
+    COMMAND $<TARGET_FILE:test_single_txnrun> -p silo)
 add_test(
-    NAME TestConcurTxnRun
-    COMMAND $<TARGET_FILE:test_concur_txnrun>)
+    NAME TestConcurTxnRun_Silo
+    COMMAND $<TARGET_FILE:test_concur_txnrun> -p silo)
+add_test(
+    NAME TestSingleTxnRun_Silo_HV
+    COMMAND $<TARGET_FILE:test_single_txnrun> -p silo_hv)
+add_test(
+    NAME TestConcurTxnRun_Silo_HV
+    COMMAND $<TARGET_FILE:test_concur_txnrun> -p silo_hv)
