@@ -6,8 +6,10 @@
 #include <cstring>
 #include <iomanip>
 #include <iostream>
+#include <latch>
 #include <limits>
 #include <map>
+#include <queue>
 #include <random>
 #include <set>
 #include <stdexcept>
@@ -20,29 +22,37 @@
 #include "garner.hpp"
 #include "utils.hpp"
 
+static constexpr size_t TEST_DEGREE = 6;
+static constexpr size_t NUM_OPS_WARMUP = 1000;
+
+// using a very small key space to force many conflicts
+// should see a rather high abort rate
 static constexpr size_t KEY_LEN = 2;
 
 static unsigned NUM_ROUNDS = 1;
 static unsigned NUM_THREADS = 8;
-static size_t NUM_OPS_PER_THREAD = 6000;
+static size_t NUM_OPS_PER_THREAD = 12000;
 static size_t MAX_OPS_PER_TXN = 30;
 
 static void client_thread_func(unsigned tidx, garner::Garner* gn,
-                               std::vector<GarnerReq>* reqs,
-                               std::atomic<uint64_t>* ser_counter) {
+                               uint64_t pre_putval,
+                               const std::vector<std::string>* pre_putvec,
+                               bool static_mode, std::vector<GarnerReq>* reqs,
+                               std::atomic<uint64_t>* ser_counter,
+                               std::latch* init_barrier) {
     reqs->clear();
     reqs->reserve(NUM_OPS_PER_THREAD);
-
-    uint64_t putval = 1000;  // monotonically increasing on each thread
-    std::vector<std::string> putvec;
-    putvec.reserve(NUM_OPS_PER_THREAD);
 
     std::random_device rd;
     std::mt19937 gen(rd());
 
+    uint64_t putval = pre_putval;
+    std::vector<std::string> putvec(*pre_putvec);
+
     std::uniform_int_distribution<unsigned> rand_op_type(1, 3);
     std::uniform_int_distribution<unsigned> rand_get_source(1, 2);
-    std::uniform_int_distribution<size_t> rand_idx(0, NUM_OPS_PER_THREAD - 1);
+    std::uniform_int_distribution<size_t> rand_idx(
+        0, NUM_OPS_PER_THREAD + NUM_OPS_WARMUP - 1);
 
     auto GenRandomReq = [&](bool scan_only) -> GarnerReq {
         // randomly pick an op type
@@ -65,7 +75,12 @@ static void client_thread_func(unsigned tidx, garner::Garner* gn,
             return GarnerReq(GET, key);
 
         } else if (op == PUT) {
-            std::string key = gen_rand_string(gen, KEY_LEN);
+            std::string key;
+            if (static_mode) {
+                assert(putvec.size() > 0);
+                key = putvec[rand_idx(gen) % putvec.size()];
+            } else
+                key = gen_rand_string(gen, KEY_LEN);
             std::string val =
                 std::to_string(tidx) + "-" + std::to_string(putval);
             putval++;
@@ -86,17 +101,21 @@ static void client_thread_func(unsigned tidx, garner::Garner* gn,
     std::uniform_int_distribution<size_t> rand_txn_ops(1, MAX_OPS_PER_TXN);
     std::uniform_int_distribution<size_t> rand_txn_ops_scan(
         1, MAX_OPS_PER_TXN / 10);
-    std::uniform_int_distribution<unsigned> rand_non_scan(0, 9);
+    std::uniform_int_distribution<unsigned> rand_non_scan(0, 4);
 
     std::string get_buf = "";
     std::vector<std::tuple<std::string, std::string>> scan_result;
     uint64_t ser_order = 0;
 
+    // sync all client threads here before doing work
+    init_barrier->count_down();
+    init_barrier->wait();
+
     size_t curr_ops = 0;
     while (curr_ops < NUM_OPS_PER_THREAD) {
         // generate scan only or not decision
         unsigned non_scan = rand_non_scan(gen);
-        bool scan_txn = (non_scan > 0);
+        bool scan_txn = (non_scan == 0);
 
         // generate number of ops for this transaction
         size_t txn_ops = scan_txn ? rand_txn_ops_scan(gen) : rand_txn_ops(gen);
@@ -139,8 +158,10 @@ static void client_thread_func(unsigned tidx, garner::Garner* gn,
     }
 }
 
-static void integrity_check(garner::Garner* gn,
-                            std::vector<std::vector<GarnerReq>*>* thread_reqs) {
+static void integrity_check(
+    garner::Garner* gn, std::vector<std::vector<GarnerReq>*>* thread_reqs,
+    const std::map<std::string, std::string>& warmup_map) {
+    // gather possible final values of each key
     std::map<std::string, std::map<unsigned, std::string>> final_valid_vals;
     for (unsigned tidx = 0; tidx < thread_reqs->size(); ++tidx) {
         for (auto it = thread_reqs->at(tidx)->rbegin();
@@ -153,6 +174,12 @@ static void integrity_check(garner::Garner* gn,
                     final_valid_vals[it->key][tidx] = it->value;
             }
         }
+    }
+    for (auto&& [key, val] : warmup_map) {
+        if (!final_valid_vals.contains(key))
+            final_valid_vals[key] = std::map<unsigned, std::string>({{0, val}});
+        else if (!final_valid_vals[key].contains(0))
+            final_valid_vals[key][0] = val;
     }
 
     std::vector<std::tuple<std::string, std::string>> scan_result;
@@ -197,7 +224,8 @@ static void integrity_check(garner::Garner* gn,
 
 static void serializability_check(
     [[maybe_unused]] garner::Garner* gn,
-    std::vector<std::vector<GarnerReq>*>* thread_reqs) {
+    std::vector<std::vector<GarnerReq>*>* thread_reqs,
+    const std::map<std::string, std::string>& warmup_map) {
     // use ser_order as the equivalent order and check against the result of
     // execution with that order
     //
@@ -210,7 +238,7 @@ static void serializability_check(
     for (auto it = thread_reqs->begin(); it != thread_reqs->end(); ++it)
         total_nreqs += (*it)->size();
 
-    std::map<std::string, std::string> refmap;
+    std::map<std::string, std::string> refmap(warmup_map);
 
     auto CheckedPut = [&](std::string key, std::string val) {
         // std::cout << "Put " << key << " " << val << std::endl;
@@ -282,33 +310,45 @@ static void serializability_check(
             }
         };
 
-    size_t nreqs = 0;
+    size_t nreqs = 0, ncommitted = 0;
     std::vector<size_t> thread_idxs(nthreads, 0);
-    while (nreqs < total_nreqs) {
-        // find the head-of-line request with smallest ser_order across threads
-        unsigned tidx = NUM_THREADS;
-        uint64_t min_ser_order = std::numeric_limits<uint64_t>::max();
-        for (unsigned t = 0; t < nthreads; ++t) {
-            while (thread_idxs[t] < thread_reqs->at(t)->size() &&
-                   !thread_reqs->at(t)->at(thread_idxs[t]).committed) {
-                thread_idxs[t]++;
-                nreqs++;
-            }
-            if (thread_idxs[t] >= thread_reqs->at(t)->size()) continue;
+    std::vector<size_t> thread_nreqs(nthreads);
+    for (unsigned t = 0; t < nthreads; ++t)
+        thread_nreqs[t] = thread_reqs->at(t)->size();
 
-            uint64_t ser_order =
-                thread_reqs->at(t)->at(thread_idxs[t]).ser_order;
-            if (ser_order < min_ser_order) {
-                tidx = t;
-                min_ser_order = ser_order;
-            }
+    auto SerOrderGreater = [](const std::pair<unsigned, uint64_t>& pa,
+                              const std::pair<unsigned, uint64_t>& pb) {
+        return pa.second > pb.second;
+    };
+    std::priority_queue<std::pair<unsigned, uint64_t>,
+                        std::vector<std::pair<unsigned, uint64_t>>,
+                        decltype(SerOrderGreater)>
+        minheap(SerOrderGreater);
+    for (unsigned t = 0; t < nthreads; ++t) {
+        while (thread_idxs[t] < thread_nreqs[t] &&
+               !thread_reqs->at(t)->at(thread_idxs[t]).committed) {
+            thread_idxs[t]++;
+            nreqs++;
         }
-        if (tidx == NUM_THREADS) break;
+        if (thread_idxs[t] < thread_nreqs[t]) {
+            minheap.push(std::make_pair(
+                t, thread_reqs->at(t)->at(thread_idxs[t]).ser_order));
+        }
+    }
 
-        // apply the operations in the transation with that ser_order
-        while (thread_idxs[tidx] < thread_reqs->at(tidx)->size()) {
-            GarnerReq* req = &thread_reqs->at(tidx)->at(thread_idxs[tidx]);
-            if (!req->committed || req->ser_order != min_ser_order) break;
+    while (nreqs < total_nreqs) {
+        assert(minheap.size() > 0);
+
+        // find the head-of-line request with smallest ser_order across threads
+        unsigned t;
+        uint64_t ser_order;
+        std::tie(t, ser_order) = minheap.top();
+        minheap.pop();
+
+        // apply the operations in that transation of that ser_order
+        while (thread_idxs[t] < thread_nreqs[t]) {
+            GarnerReq* req = &thread_reqs->at(t)->at(thread_idxs[t]);
+            if (!req->committed || req->ser_order != ser_order) break;
 
             if (req->op == GET)
                 CheckedGet(req->key, req->value, req->get_found);
@@ -318,45 +358,87 @@ static void serializability_check(
                 CheckedScan(req->key, req->rkey, req->scan_result,
                             req->scan_result.size());
 
-            thread_idxs[tidx]++;
+            thread_idxs[t]++;
+            nreqs++;
+            ncommitted++;
+        }
+
+        // push the next committed request of that thread into minheap
+        while (thread_idxs[t] < thread_nreqs[t] &&
+               !thread_reqs->at(t)->at(thread_idxs[t]).committed) {
+            thread_idxs[t]++;
             nreqs++;
         }
+        if (thread_idxs[t] < thread_nreqs[t]) {
+            minheap.push(std::make_pair(
+                t, thread_reqs->at(t)->at(thread_idxs[t]).ser_order));
+        }
     }
-    assert(nreqs == total_nreqs);
+
+    assert(minheap.empty());
+    assert(nreqs >= ncommitted);
+    size_t naborted = nreqs - ncommitted;
+    double abort_rate =
+        static_cast<double>(naborted) / static_cast<double>(nreqs);
+    std::cout << "  Abort rate: " << naborted << " / " << nreqs << " ("
+              << std::fixed << std::setw(4) << std::setprecision(1)
+              << abort_rate * 100 << "%)" << std::endl;
 }
 
-static void concurrency_test_round(garner::TxnProtocol protocol) {
-    constexpr size_t TEST_DEGREE = 6;
-
+static void concurrency_test_round(garner::TxnProtocol protocol,
+                                   bool static_mode) {
     auto* gn = garner::Garner::Open(TEST_DEGREE, protocol);
 
     std::cout << " Degree=" << TEST_DEGREE << " #threads=" << NUM_THREADS
-              << " #ops/thread=" << NUM_OPS_PER_THREAD << std::endl;
+              << " #ops/thread=" << NUM_OPS_PER_THREAD
+              << " static=" << (static_mode ? "yes" : "no") << std::endl;
 
     std::atomic<uint64_t> ser_counter{1};
 
     // gn->PrintStats(true);
 
+    std::cout << " Warming up B+-tree with some records..." << std::endl;
+    std::random_device rd;
+    std::mt19937 gen(rd());
+
+    uint64_t pre_putval = 1000;  // monotonically increasing on each thread
+    std::vector<std::string> pre_putvec;
+    pre_putvec.reserve(NUM_OPS_WARMUP);
+    std::map<std::string, std::string> warmup_map;
+
+    for (size_t j = 0; j < NUM_OPS_WARMUP; ++j) {
+        std::string key = gen_rand_string(gen, KEY_LEN);
+        std::string val = std::to_string(0) + "-" + std::to_string(pre_putval);
+        pre_putval++;
+        gn->Put(key, val);
+        pre_putvec.push_back(key);
+        warmup_map[key] = val;
+    }
+
+    // gn->PrintStats(true);
+
     // spawn multiple threads, each doing a sufficient number of requests,
     // and recording the list of requests (+ results) on each
-    std::cout << " Running multi-threaded transaction workload... "
-              << std::endl;
+    std::cout << " Running multi-threaded transaction workload..." << std::endl;
     std::vector<std::thread> threads;
     std::vector<std::vector<GarnerReq>*> thread_reqs;
+    std::latch init_barrier(NUM_THREADS);
+
     for (unsigned tidx = 0; tidx < NUM_THREADS; ++tidx) {
         thread_reqs.push_back(new std::vector<GarnerReq>);
-        threads.push_back(std::thread(client_thread_func, tidx, gn,
-                                      thread_reqs[tidx], &ser_counter));
+        threads.push_back(std::thread(
+            client_thread_func, tidx, gn, pre_putval, &pre_putvec, static_mode,
+            thread_reqs[tidx], &ser_counter, &init_barrier));
     }
     for (unsigned tidx = 0; tidx < NUM_THREADS; ++tidx) threads[tidx].join();
 
     // run an (incomplete) serializability check against thread results
     std::cout << " Doing basic integrity check..." << std::endl;
-    integrity_check(gn, &thread_reqs);
+    integrity_check(gn, &thread_reqs, warmup_map);
 
     // run a serializability check against thread results
-    std::cout << " Doing serailizability check..." << std::endl;
-    serializability_check(gn, &thread_reqs);
+    std::cout << " Doing serializability check..." << std::endl;
+    serializability_check(gn, &thread_reqs, warmup_map);
 
     // gn->PrintStats(true);
 
@@ -366,7 +448,7 @@ static void concurrency_test_round(garner::TxnProtocol protocol) {
 }
 
 int main(int argc, char* argv[]) {
-    bool help;
+    bool help, static_mode;
     std::string protocol_str;
 
     cxxopts::Options cmd_args(argv[0]);
@@ -379,17 +461,19 @@ int main(int argc, char* argv[]) {
         "t,threads", "number of threads",
         cxxopts::value<unsigned>(NUM_THREADS)->default_value("8"))(
         "o,ops", "number of ops per thread per round",
-        cxxopts::value<size_t>(NUM_OPS_PER_THREAD)->default_value("6000"))(
+        cxxopts::value<size_t>(NUM_OPS_PER_THREAD)->default_value("12000"))(
         "m,max_ops_txn", "max number of ops per transaction",
-        cxxopts::value<size_t>(MAX_OPS_PER_TXN)->default_value("30"));
+        cxxopts::value<size_t>(MAX_OPS_PER_TXN)->default_value("30"))(
+        "s,static", "if set, disallow on-the-fly insertions",
+        cxxopts::value<bool>(static_mode)->default_value("false"));
     auto result = cmd_args.parse(argc, argv);
 
-    std::set<std::string> valid_protocols{"none", "silo"};
+    std::set<std::string> valid_protocols{"none", "silo", "silo_hv"};
 
     if (help) {
         printf("%s", cmd_args.help().c_str());
-        std::cout << std::endl << "Valid concurrency control protocols: ";
-        for (auto&& p : valid_protocols) std::cout << p << " ";
+        std::cout << std::endl << "Valid concurrency control protocols:  ";
+        for (auto&& p : valid_protocols) std::cout << p << "  ";
         std::cout << std::endl;
         return 0;
     }
@@ -399,6 +483,8 @@ int main(int argc, char* argv[]) {
         protocol = garner::PROTOCOL_NONE;
     else if (protocol_str == "silo")
         protocol = garner::PROTOCOL_SILO;
+    else if (protocol_str == "silo_hv")
+        protocol = garner::PROTOCOL_SILO_HV;
     else {
         std::cerr << "Error: unrecognized concurrency control protocol: "
                   << protocol_str << std::endl;
@@ -420,7 +506,7 @@ int main(int argc, char* argv[]) {
 
     for (unsigned round = 0; round < NUM_ROUNDS; ++round) {
         std::cout << "Round " << round << " --" << std::endl;
-        concurrency_test_round(protocol);
+        concurrency_test_round(protocol, static_mode);
     }
 
     return 0;

@@ -1,6 +1,7 @@
 // B+-tree node page format definitions.
 
 #include <algorithm>
+#include <atomic>
 #include <iostream>
 #include <shared_mutex>
 #include <vector>
@@ -54,12 +55,16 @@ struct Page {
     // read-write mutex as latch
     std::shared_mutex latch;
 
+    // tree node semaphore & version number for hierarchical validation
+    std::atomic<uint64_t> hv_sem;
+    std::atomic<uint64_t> hv_ver;
+
     // sorted list of keys
     std::vector<K> keys;
 
     Page() = delete;
     Page(PageType type, size_t degree)
-        : type(type), degree(degree), latch(), keys() {
+        : type(type), degree(degree), latch(), hv_sem(0), hv_ver(0), keys() {
         keys.reserve(degree);
     }
 
@@ -105,7 +110,7 @@ struct PageLeaf : public Page<K> {
     Page<K>* next = nullptr;
 
     // records according to sorted keys, keys[0] -> records[0], etc.
-    std::vector<Record<V>*> records;
+    std::vector<Record<K, V>*> records;
 
     PageLeaf() = delete;
     PageLeaf(size_t degree)
@@ -127,7 +132,7 @@ struct PageLeaf : public Page<K> {
      *
      * Must have page latch held in write mode when calling this.
      */
-    Record<V>* Inject(ssize_t search_idx, K key);
+    Record<K, V>* Inject(ssize_t search_idx, K key);
 };
 
 template <typename K, typename V>
@@ -193,8 +198,8 @@ struct PageRoot : public Page<K> {
     unsigned depth = 0;
 
     // page content sorted according to key
-    std::vector<Record<V>*> records;  // depth == 1: root is the only leaf
-    std::vector<Page<K>*> children;   // depth > 1: root is non-leaf
+    std::vector<Record<K, V>*> records;  // depth == 1: root is the only leaf
+    std::vector<Page<K>*> children;      // depth > 1: root is non-leaf
 
     PageRoot() = delete;
     PageRoot(size_t degree)
@@ -211,7 +216,7 @@ struct PageRoot : public Page<K> {
     /**
      * Root page may act as either type, depending on depth.
      */
-    Record<V>* Inject(ssize_t search_idx, K key);
+    Record<K, V>* Inject(ssize_t search_idx, K key);
     void Inject(ssize_t search_idx, K key, Page<K>* lpage, Page<K>* rpage);
 };
 

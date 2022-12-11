@@ -13,10 +13,15 @@ namespace garner {
  *
  * Before accessing the value, should have appropriate latch held.
  */
-template <typename V>
+template <typename K, typename V>
 struct Record {
     // read-write mutex as latch
     std::shared_mutex latch;
+
+    // a copy of key is stored in the record
+    // this field should never be modified after the creation of record, so is
+    // safe for reader to access without latching
+    const K key;
 
     // user value
     V value;
@@ -29,7 +34,8 @@ struct Record {
     // effective only when concurerncy control is on
     bool valid = false;
 
-    Record() : latch(), value(), version(0), valid(false) {}
+    Record() = delete;
+    Record(K key) : latch(), key(key), value(), version(0), valid(false) {}
 
     Record(const Record&) = delete;
     Record& operator=(const Record&) = delete;
@@ -37,9 +43,9 @@ struct Record {
     ~Record() = default;
 };
 
-template <typename V>
-std::ostream& operator<<(std::ostream& s, const Record<V>& record) {
-    s << "Record{value=" << record.value << "}";
+template <typename K, typename V>
+std::ostream& operator<<(std::ostream& s, const Record<K, V>& record) {
+    s << "Record{key=" << record.key << ",value=" << record.value << "}";
     return s;
 }
 

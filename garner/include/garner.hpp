@@ -10,13 +10,17 @@ namespace garner {
 // forward declare TxnCxt type
 // Clients should never need to call any methods on this type, but rather
 // just passing pointers around through Garner's public interface.
-template <typename V>
+template <typename K, typename V>
 class TxnCxt;
 
 /**
  * Transaction concurrency control protocols enum.
  */
-typedef enum TxnProtocol { PROTOCOL_NONE, PROTOCOL_SILO } TxnProtocol;
+typedef enum TxnProtocol {
+    PROTOCOL_NONE,    // no concurrency control
+    PROTOCOL_SILO,    // simplified Silo
+    PROTOCOL_SILO_HV  // Silo with hierarchical validation
+} TxnProtocol;
 
 /**
  * Garner in-memory KV-DB interface.
@@ -53,7 +57,7 @@ class Garner {
      *
      * Exceptions might be thrown.
      */
-    virtual TxnCxt<VType>* StartTxn() = 0;
+    virtual TxnCxt<KType, VType>* StartTxn() = 0;
 
     /**
      * Attempt validation and commit of transaction.
@@ -63,7 +67,7 @@ class Garner {
      *
      * Returns true if commited, or false if aborted.
      */
-    virtual bool FinishTxn(TxnCxt<VType>* txn,
+    virtual bool FinishTxn(TxnCxt<KType, VType>* txn,
                            std::atomic<uint64_t>* ser_counter = nullptr,
                            uint64_t* ser_order = nullptr) = 0;
 
@@ -78,7 +82,8 @@ class Garner {
      *
      * Exceptions might be thrown.
      */
-    virtual bool Put(KType key, VType value, TxnCxt<VType>* txn = nullptr) = 0;
+    virtual bool Put(KType key, VType value,
+                     TxnCxt<KType, VType>* txn = nullptr) = 0;
 
     /**
      * Search for a key, fill given reference with value and set found to true.
@@ -93,7 +98,7 @@ class Garner {
      * Exceptions might be thrown.
      */
     virtual bool Get(const KType& key, VType& value, bool& found,
-                     TxnCxt<VType>* txn = nullptr) = 0;
+                     TxnCxt<KType, VType>* txn = nullptr) = 0;
 
     /**
      * Delete the record matching key and set found to true. If not found, set
@@ -108,7 +113,7 @@ class Garner {
      * Exceptions might be thrown.
      */
     virtual bool Delete(const KType& key, bool& found,
-                        TxnCxt<VType>* txn = nullptr) = 0;
+                        TxnCxt<KType, VType>* txn = nullptr) = 0;
 
     /**
      * Do a range scan over an inclusive key range [lkey, rkey], and
@@ -125,7 +130,8 @@ class Garner {
      */
     virtual bool Scan(const KType& lkey, const KType& rkey,
                       std::vector<std::tuple<KType, VType>>& results,
-                      size_t& nrecords, TxnCxt<VType>* txn = nullptr) = 0;
+                      size_t& nrecords,
+                      TxnCxt<KType, VType>* txn = nullptr) = 0;
 
     /**
      * Scan the whole B+-tree and print statistics. If print_pages is true,

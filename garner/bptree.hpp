@@ -7,11 +7,11 @@
 #include <limits>
 #include <mutex>
 #include <new>
-#include <set>
 #include <shared_mutex>
 #include <stdexcept>
 #include <string>
 #include <tuple>
+#include <unordered_set>
 #include <vector>
 
 #include "common.hpp"
@@ -39,7 +39,7 @@ class BPTree {
     PageRoot<K, V>* root = nullptr;
 
     // set of all pages allocated; this is for simplicity
-    std::set<Page<K>*> all_pages;
+    std::unordered_set<Page<K>*> all_pages;
     std::mutex all_pages_lock;
 
     /**
@@ -74,14 +74,16 @@ class BPTree {
      * Split the given page into two siblings, and propagate one new key
      * up to the parent node. May trigger cascading splits. The path
      * argument is a list of internal node pages, starting from root, leading
-     * to the node to be split.
+     * to the node to be split. The trigger_key argument is the key whose
+     * insertion triggered this split.
      *
      * Must have write latches already held on possibly affected pages.
      *
      * After this function returns, the path vector will be updated to
      * reflect the new path to the right sibling node.
      */
-    void SplitPage(Page<K>* page, std::vector<Page<K>*>& path);
+    void SplitPage(Page<K>* page, std::vector<Page<K>*>& path,
+                   const K& trigger_key);
 
    public:
     BPTree(size_t degree);
@@ -92,7 +94,7 @@ class BPTree {
      *
      * Exceptions might be thrown.
      */
-    void Put(K key, V value, TxnCxt<V>* txn);
+    void Put(K key, V value, TxnCxt<K, V>* txn);
 
     /**
      * Search for a key, fill given reference with value.
@@ -100,7 +102,7 @@ class BPTree {
      *
      * Exceptions might be thrown.
      */
-    bool Get(const K& key, V& value, TxnCxt<V>* txn);
+    bool Get(const K& key, V& value, TxnCxt<K, V>* txn);
 
     /**
      * Delete the record matching key.
@@ -108,7 +110,7 @@ class BPTree {
      *
      * Exceptions might be thrown.
      */
-    bool Delete(const K& key, TxnCxt<V>* txn);
+    bool Delete(const K& key, TxnCxt<K, V>* txn);
 
     /**
      * Do a range scan over an inclusive key range [lkey, rkey], and
@@ -118,7 +120,7 @@ class BPTree {
      * Exceptions might be thrown.
      */
     size_t Scan(const K& lkey, const K& rkey,
-                std::vector<std::tuple<K, V>>& results, TxnCxt<V>* txn);
+                std::vector<std::tuple<K, V>>& results, TxnCxt<K, V>* txn);
 
     /**
      * Scan the whole B+-tree and print statistics. If print_pages is true,

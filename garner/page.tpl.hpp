@@ -39,7 +39,7 @@ ssize_t Page<K>::SearchKey(const K& key) const {
 }
 
 template <typename K, typename V>
-Record<V>* PageLeaf<K, V>::Inject(ssize_t search_idx, K key) {
+Record<K, V>* PageLeaf<K, V>::Inject(ssize_t search_idx, K key) {
     assert(this->NumKeys() < this->degree);
     assert(search_idx >= -1 &&
            search_idx < static_cast<ssize_t>(this->NumKeys()));
@@ -47,7 +47,7 @@ Record<V>* PageLeaf<K, V>::Inject(ssize_t search_idx, K key) {
 
     // if key has exact match with the one on idx, simply return that record
     if (search_idx >= 0 && this->keys[search_idx] == key) {
-        Record<V>* record = records[search_idx];
+        Record<K, V>* record = records[search_idx];
         assert(record != nullptr);
         return record;
     }
@@ -57,7 +57,7 @@ Record<V>* PageLeaf<K, V>::Inject(ssize_t search_idx, K key) {
     size_t shift_idx = search_idx + 1;
     this->keys.insert(this->keys.begin() + shift_idx, key);
 
-    Record<V>* record = new Record<V>();
+    Record<K, V>* record = new Record<K, V>(key);
     if (record == nullptr)
         throw GarnerException("failed to allocate new record");
     records.insert(records.begin() + shift_idx, record);
@@ -88,7 +88,7 @@ void PageItnl<K, V>::Inject(ssize_t search_idx, K key, Page<K>* lpage,
 }
 
 template <typename K, typename V>
-Record<V>* PageRoot<K, V>::Inject(ssize_t search_idx, K key) {
+Record<K, V>* PageRoot<K, V>::Inject(ssize_t search_idx, K key) {
     assert(this->NumKeys() < this->degree);
     assert(search_idx >= -1 &&
            search_idx < static_cast<ssize_t>(this->NumKeys()));
@@ -98,7 +98,7 @@ Record<V>* PageRoot<K, V>::Inject(ssize_t search_idx, K key) {
 
     // if key has exact match with the one on idx, simply return that record
     if (search_idx >= 0 && this->keys[search_idx] == key) {
-        Record<V>* record = records[search_idx];
+        Record<K, V>* record = records[search_idx];
         assert(record != nullptr);
         return record;
     }
@@ -108,7 +108,7 @@ Record<V>* PageRoot<K, V>::Inject(ssize_t search_idx, K key) {
     size_t shift_idx = search_idx + 1;
     this->keys.insert(this->keys.begin() + shift_idx, key);
 
-    Record<V>* record = new Record<V>();
+    Record<K, V>* record = new Record<K, V>(key);
     if (record == nullptr)
         throw GarnerException("failed to allocate new record");
     records.insert(records.begin() + shift_idx, record);

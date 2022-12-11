@@ -5,6 +5,7 @@
 #include <cstring>
 #include <iomanip>
 #include <iostream>
+#include <latch>
 #include <map>
 #include <random>
 #include <set>
@@ -18,6 +19,7 @@
 #include "garner.hpp"
 #include "utils.hpp"
 
+static constexpr size_t TEST_DEGREE = 6;
 static constexpr size_t KEY_LEN = 2;
 
 static unsigned NUM_ROUNDS = 5;
@@ -25,7 +27,8 @@ static unsigned NUM_THREADS = 8;
 static size_t NUM_OPS_PER_THREAD = 5000;
 
 static void client_thread_func(unsigned tidx, garner::Garner* gn,
-                               std::vector<GarnerReq>* reqs) {
+                               std::vector<GarnerReq>* reqs,
+                               std::latch* init_barrier) {
     reqs->clear();
     reqs->reserve(NUM_OPS_PER_THREAD);
 
@@ -81,6 +84,10 @@ static void client_thread_func(unsigned tidx, garner::Garner* gn,
 
     std::string get_buf = "";
     std::vector<std::tuple<std::string, std::string>> scan_result;
+
+    // sync all client threads here before doing work
+    init_barrier->count_down();
+    init_barrier->wait();
 
     for (size_t i = 0; i < NUM_OPS_PER_THREAD; ++i) {
         // generate a random request
@@ -163,8 +170,6 @@ static void integrity_check(garner::Garner* gn,
 }
 
 static void concurrency_test_round() {
-    constexpr size_t TEST_DEGREE = 6;
-
     auto* gn = garner::Garner::Open(TEST_DEGREE, garner::PROTOCOL_NONE);
 
     std::cout << " Degree=" << TEST_DEGREE << " #threads=" << NUM_THREADS
@@ -177,10 +182,12 @@ static void concurrency_test_round() {
     std::cout << " Running multi-threaded B+-tree workload... " << std::endl;
     std::vector<std::thread> threads;
     std::vector<std::vector<GarnerReq>*> thread_reqs;
+    std::latch init_barrier(NUM_THREADS);
+
     for (unsigned tidx = 0; tidx < NUM_THREADS; ++tidx) {
         thread_reqs.push_back(new std::vector<GarnerReq>);
-        threads.push_back(
-            std::thread(client_thread_func, tidx, gn, thread_reqs[tidx]));
+        threads.push_back(std::thread(client_thread_func, tidx, gn,
+                                      thread_reqs[tidx], &init_barrier));
     }
     for (unsigned tidx = 0; tidx < NUM_THREADS; ++tidx) threads[tidx].join();
 

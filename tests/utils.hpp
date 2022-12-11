@@ -1,3 +1,4 @@
+#include <cassert>
 #include <random>
 #include <stdexcept>
 #include <string>

@@ -15,14 +15,7 @@
 
 #include "cxxopts.hpp"
 #include "garner.hpp"
-
-typedef enum GarnerOp { GET, PUT, DELETE, SCAN, UNKNOWN } GarnerOp;
-
-struct GarnerReq {
-    GarnerOp op;
-    std::string key;
-    std::string rkey;  // only valid for scan
-};
+#include "utils.hpp"
 
 static std::tuple<std::vector<GarnerReq>, size_t> read_input_trace(
     const std::string& filename) {
@@ -48,7 +41,7 @@ static std::tuple<std::vector<GarnerReq>, size_t> read_input_trace(
                                       : (opcode == "SCAN") ? SCAN : UNKNOWN;
         std::string rkey;
         if (op == SCAN) input >> rkey;
-        reqs.push_back(GarnerReq{.op = op, .key = key, .rkey = rkey});
+        reqs.push_back(GarnerReq(op, key, rkey, ""));
     }
 
     if (reqs.size() == 0) {

@@ -140,7 +140,8 @@ BPTree<K, V>::TraverseToLeaf(const K& key, LatchMode latch_mode) {
 }
 
 template <typename K, typename V>
-void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path) {
+void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path,
+                             const K& trigger_key) {
     if (page->type == PAGE_ROOT) {
         // if spliting root page, need to allocate two pages
         auto* spage = reinterpret_cast<PageRoot<K, V>*>(page);
@@ -150,6 +151,7 @@ void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path) {
 
         size_t mpos = spage->NumKeys() / 2;
         Page<K>*lpage_saved, *rpage_saved;
+        K mkey;
 
         if (spage->depth == 1) {
             // special case of the very first split of root leaf
@@ -176,9 +178,10 @@ void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path) {
                       std::back_inserter(rpage->records));
 
             // populate split node with first key of right child
+            mkey = rpage->keys[0];
             spage->keys.clear();
             spage->records.clear();
-            spage->keys.push_back(rpage->keys[0]);
+            spage->keys.push_back(mkey);
 
         } else {
             // splitting root into two internal nodes
@@ -203,7 +206,7 @@ void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path) {
                       std::back_inserter(rpage->children));
 
             // populate split node with the middle key
-            K mkey = spage->keys[mpos];
+            mkey = spage->keys[mpos];
             spage->keys.clear();
             spage->children.clear();
             spage->keys.push_back(mkey);
@@ -215,7 +218,10 @@ void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path) {
         spage->depth++;
 
         // update path vector
-        path.push_back(rpage_saved);
+        if (mkey <= trigger_key)
+            path.push_back(rpage_saved);
+        else
+            path.push_back(lpage_saved);
 
     } else {
         // if splitting a non-root node
@@ -289,16 +295,19 @@ void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path) {
         // if parent internal node becomes full, do split recursively
         if (parent->NumKeys() >= degree) {
             path.pop_back();
-            SplitPage(parent, path);
-            path.push_back(rpage_saved);
+            SplitPage(parent, path, trigger_key);
+            if (mkey <= trigger_key)
+                path.push_back(rpage_saved);
+            else
+                path.push_back(page);
         } else {
-            path.back() = rpage_saved;
+            if (mkey <= trigger_key) path.back() = rpage_saved;
         }
     }
 }
 
 template <typename K, typename V>
-void BPTree<K, V>::Put(K key, V value, TxnCxt<V>* txn) {
+void BPTree<K, V>::Put(K key, V value, TxnCxt<K, V>* txn) {
     DEBUG("req Put %s val %s", StreamStr(key).c_str(),
           StreamStr(value).c_str());
 
@@ -311,7 +320,7 @@ void BPTree<K, V>::Put(K key, V value, TxnCxt<V>* txn) {
 
     // inject key into the leaf node and get pointer to record
     assert(leaf->NumKeys() < degree);
-    Record<V>* record = nullptr;
+    Record<K, V>* record = nullptr;
     ssize_t idx = leaf->SearchKey(key);
     if (leaf->type == PAGE_ROOT)
         record = reinterpret_cast<PageRoot<K, V>*>(leaf)->Inject(idx, key);
@@ -320,7 +329,11 @@ void BPTree<K, V>::Put(K key, V value, TxnCxt<V>* txn) {
     assert(record != nullptr);
 
     // if this leaf node becomes full, do split
-    if (leaf->NumKeys() >= degree) SplitPage(leaf, path);
+    if (leaf->NumKeys() >= degree) SplitPage(leaf, path, key);
+
+    // call concurrency control algorithm's traversal logic
+    if (txn != nullptr)
+        for (auto* page : path) txn->ExecWriteTraverseNode(page);
 
     // release held page write latch(es)
     assert(write_latched_pages.size() > 0);
@@ -342,7 +355,7 @@ void BPTree<K, V>::Put(K key, V value, TxnCxt<V>* txn) {
 }
 
 template <typename K, typename V>
-bool BPTree<K, V>::Get(const K& key, V& value, TxnCxt<V>* txn) {
+bool BPTree<K, V>::Get(const K& key, V& value, TxnCxt<K, V>* txn) {
     DEBUG("req Get %s", StreamStr(key).c_str());
 
     // traverse to the correct leaf node and read
@@ -362,12 +375,16 @@ bool BPTree<K, V>::Get(const K& key, V& value, TxnCxt<V>* txn) {
     }
 
     // found match key, fetch record
-    Record<V>* record = nullptr;
+    Record<K, V>* record = nullptr;
     if (leaf->type == PAGE_ROOT)
         record = reinterpret_cast<PageRoot<K, V>*>(leaf)->records[idx];
     else
         record = reinterpret_cast<PageLeaf<K, V>*>(leaf)->records[idx];
     assert(record != nullptr);
+
+    // call concurrency control algorithm's traversal logic
+    if (txn != nullptr)
+        for (auto* page : path) txn->ExecReadTraverseNode(page);
 
     // release held page read latch
     leaf->latch.unlock_shared();
@@ -388,7 +405,7 @@ bool BPTree<K, V>::Get(const K& key, V& value, TxnCxt<V>* txn) {
 
 template <typename K, typename V>
 bool BPTree<K, V>::Delete([[maybe_unused]] const K& key,
-                          [[maybe_unused]] TxnCxt<V>* txn) {
+                          [[maybe_unused]] TxnCxt<K, V>* txn) {
     // TODO: implement me
     throw GarnerException("Delete not implemented yet!");
 }
@@ -396,7 +413,7 @@ bool BPTree<K, V>::Delete([[maybe_unused]] const K& key,
 template <typename K, typename V>
 size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
                           std::vector<std::tuple<K, V>>& results,
-                          TxnCxt<V>* txn) {
+                          TxnCxt<K, V>* txn) {
     DEBUG("req Scan %s to %s", StreamStr(lkey).c_str(),
           StreamStr(rkey).c_str());
 
@@ -407,6 +424,10 @@ size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
     std::tie(lpath, std::ignore) = TraverseToLeaf(lkey, LATCH_READ);
     assert(lpath.size() > 0);
     Page<K>* lleaf = lpath.back();
+
+    // call concurrency control algorithm's traversal logic
+    if (txn != nullptr)
+        for (auto* page : lpath) txn->ExecReadTraverseNode(page);
 
     // read out the leaf pages in a loop by following sibling chains,
     // gathering records in range
@@ -442,7 +463,7 @@ size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
                 return nrecords;
             }
 
-            Record<V>* record;
+            Record<K, V>* record;
             if (leaf->type == PAGE_ROOT)
                 record = reinterpret_cast<PageRoot<K, V>*>(leaf)->records[idx];
             else
@@ -487,6 +508,10 @@ size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
             leaf->latch.unlock_shared();
             DEBUG("page latch R release %p", static_cast<void*>(leaf));
             leaf = next;
+
+            // call concurrency control algorithm's traversal logic on
+            // pointer-chained leaf
+            if (txn != nullptr) txn->ExecReadTraverseNode(leaf);
         } else {
             leaf->latch.unlock_shared();
             DEBUG("page latch R release %p", static_cast<void*>(leaf));
