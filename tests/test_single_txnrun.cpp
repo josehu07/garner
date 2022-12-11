@@ -221,8 +221,8 @@ int main(int argc, char* argv[]) {
 
     if (help) {
         printf("%s", cmd_args.help().c_str());
-        std::cout << std::endl << "Valid concurrency control protocols: ";
-        for (auto&& p : valid_protocols) std::cout << p << " ";
+        std::cout << std::endl << "Valid concurrency control protocols:  ";
+        for (auto&& p : valid_protocols) std::cout << p << "  ";
         std::cout << std::endl;
         return 0;
     }

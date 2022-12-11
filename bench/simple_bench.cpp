@@ -21,13 +21,13 @@
 #include "utils.hpp"
 
 static constexpr size_t TEST_DEGREE = 128;
-static constexpr size_t NUM_OPS_WARMUP = 20000;
+static constexpr size_t NUM_OPS_WARMUP = 10000;
 static constexpr size_t KEY_LEN = 10;
 static constexpr size_t VAL_LEN = 40;
 
 static unsigned NUM_THREADS = 8;
 static size_t MAX_OPS_PER_TXN = 10;
-static unsigned SCAN_PERCENTAGE = 10;
+static unsigned SCAN_PERCENTAGE = 25;
 
 static unsigned NUM_ROUNDS = 3;
 static uint64_t ROUND_SECS = 5;
@@ -46,13 +46,15 @@ static void client_thread_func(std::stop_token stop_token,
 
     std::string val = gen_rand_string(gen, VAL_LEN);
 
-    std::uniform_int_distribution<unsigned> rand_is_scan(1, 100);
-    std::uniform_int_distribution<unsigned> rand_op_type(1, 2);
     std::uniform_int_distribution<size_t> rand_idx(0, warmup_keys->size() - 1);
+    std::uniform_int_distribution<unsigned> rand_is_scan(1, 100);
+
+    // in non-scan transactions, 5% are write operations
+    std::uniform_int_distribution<unsigned> rand_op_type(1, 20);
 
     auto GenRandomReq = [&](bool is_scan_txn) -> GarnerReq {
         // randomly pick an op type
-        GarnerOp op = is_scan_txn ? SCAN : (rand_op_type(gen) == 1) ? GET : PUT;
+        GarnerOp op = is_scan_txn ? SCAN : (rand_op_type(gen) == 1) ? PUT : GET;
 
         if (op == GET) {
             std::string key = warmup_keys->at(rand_idx(gen));
@@ -122,7 +124,8 @@ static void simple_benchmark_round(garner::TxnProtocol protocol) {
     auto* gn = garner::Garner::Open(TEST_DEGREE, protocol);
 
     std::cout << " Degree=" << TEST_DEGREE << " #threads=" << NUM_THREADS
-              << " length=" << ROUND_SECS << "s" << std::endl;
+              << " length=" << ROUND_SECS << "s"
+              << " scan=" << SCAN_PERCENTAGE << "%" << std::endl;
 
     // gn->PrintStats(true);
 
@@ -205,15 +208,15 @@ int main(int argc, char* argv[]) {
         "m,max_ops_txn", "max number of ops per transaction",
         cxxopts::value<size_t>(MAX_OPS_PER_TXN)->default_value("10"))(
         "c,scan_percent", "percentage of scan operations",
-        cxxopts::value<unsigned>(SCAN_PERCENTAGE)->default_value("10"));
+        cxxopts::value<unsigned>(SCAN_PERCENTAGE)->default_value("25"));
     auto result = cmd_args.parse(argc, argv);
 
     std::set<std::string> valid_protocols{"none", "silo", "silo_hv"};
 
     if (help) {
         printf("%s", cmd_args.help().c_str());
-        std::cout << std::endl << "Valid concurrency control protocols: ";
-        for (auto&& p : valid_protocols) std::cout << p << " ";
+        std::cout << std::endl << "Valid concurrency control protocols:  ";
+        for (auto&& p : valid_protocols) std::cout << p << "  ";
         std::cout << std::endl;
         return 0;
     }

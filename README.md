@@ -6,9 +6,16 @@
 
 Hierarchical validation in Silo-flavor optimistic concurrency control (OCC) on a B+-tree index.
 
+<p align="center">
+    <img width="420px" src="HV-OCC.png">
+</p>
+
+The Garner codebase is aimed to be a well-documented, expandable, and easy-to-adopt in-memory transactional key-value store for future concurrency control research projects. This is an on-going work and is subject to change.
+
 ## Build
 
-Install dependencies and `gcc` 11.x for full C++-20 support:
+<details>
+<summary>Install dependencies and `gcc` 11.x for full C++-20 support...</summary>
 
 ```bash
 sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
@@ -21,6 +28,7 @@ sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 100
 sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-11 100
 sudo update-alternatives --install /usr/bin/gcov gcov /usr/bin/gcov-11 100
 ```
+</details>
 
 Build Garner library & client executables:
 
@@ -52,7 +60,11 @@ Run an individual test for detailed output:
 ./tests/test_<name> -h
 ```
 
-TODO
+Run a simple benchmarking of transaction throughput:
+
+```bash
+./bench/simple_bench -h
+```
 
 ## TODO List
 
@@ -60,7 +72,7 @@ TODO
 - [x] Transaction manager
 - [x] Basic HV-OCC protocol
 - [ ] Do better than comparing keys in skipping children nodes
-- [ ] Properly support on-the-fly insertions
+- [ ] Properly support on-the-fly insertions!
 - [ ] More comprehensive benchmarking
 - [ ] Try jemalloc/tcmalloc
 - [ ] Better latching to reduce root contention

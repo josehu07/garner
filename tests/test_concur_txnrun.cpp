@@ -390,7 +390,8 @@ static void concurrency_test_round(garner::TxnProtocol protocol,
     auto* gn = garner::Garner::Open(TEST_DEGREE, protocol);
 
     std::cout << " Degree=" << TEST_DEGREE << " #threads=" << NUM_THREADS
-              << " #ops/thread=" << NUM_OPS_PER_THREAD << std::endl;
+              << " #ops/thread=" << NUM_OPS_PER_THREAD
+              << " static=" << (static_mode ? "yes" : "no") << std::endl;
 
     std::atomic<uint64_t> ser_counter{1};
 
@@ -419,7 +420,6 @@ static void concurrency_test_round(garner::TxnProtocol protocol,
     // spawn multiple threads, each doing a sufficient number of requests,
     // and recording the list of requests (+ results) on each
     std::cout << " Running multi-threaded transaction workload..." << std::endl;
-    std::cout << "  Static mode: " << (static_mode ? "on" : "off") << std::endl;
     std::vector<std::thread> threads;
     std::vector<std::vector<GarnerReq>*> thread_reqs;
     std::latch init_barrier(NUM_THREADS);
@@ -472,8 +472,8 @@ int main(int argc, char* argv[]) {
 
     if (help) {
         printf("%s", cmd_args.help().c_str());
-        std::cout << std::endl << "Valid concurrency control protocols: ";
-        for (auto&& p : valid_protocols) std::cout << p << " ";
+        std::cout << std::endl << "Valid concurrency control protocols:  ";
+        for (auto&& p : valid_protocols) std::cout << p << "  ";
         std::cout << std::endl;
         return 0;
     }
