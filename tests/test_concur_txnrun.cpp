@@ -6,6 +6,7 @@
 #include <cstring>
 #include <iomanip>
 #include <iostream>
+#include <latch>
 #include <limits>
 #include <map>
 #include <queue>
@@ -15,7 +16,6 @@
 #include <string>
 #include <thread>
 #include <tuple>
-#include <utility>
 #include <vector>
 
 #include "cxxopts.hpp"
@@ -38,7 +38,8 @@ static void client_thread_func(unsigned tidx, garner::Garner* gn,
                                uint64_t pre_putval,
                                const std::vector<std::string>* pre_putvec,
                                bool static_mode, std::vector<GarnerReq>* reqs,
-                               std::atomic<uint64_t>* ser_counter) {
+                               std::atomic<uint64_t>* ser_counter,
+                               std::latch* init_barrier) {
     reqs->clear();
     reqs->reserve(NUM_OPS_PER_THREAD);
 
@@ -105,6 +106,10 @@ static void client_thread_func(unsigned tidx, garner::Garner* gn,
     std::string get_buf = "";
     std::vector<std::tuple<std::string, std::string>> scan_result;
     uint64_t ser_order = 0;
+
+    // sync all client threads here before doing work
+    init_barrier->count_down();
+    init_barrier->wait();
 
     size_t curr_ops = 0;
     while (curr_ops < NUM_OPS_PER_THREAD) {
@@ -414,13 +419,16 @@ static void concurrency_test_round(garner::TxnProtocol protocol,
     // spawn multiple threads, each doing a sufficient number of requests,
     // and recording the list of requests (+ results) on each
     std::cout << " Running multi-threaded transaction workload..." << std::endl;
+    std::cout << "  Static mode: " << (static_mode ? "on" : "off") << std::endl;
     std::vector<std::thread> threads;
     std::vector<std::vector<GarnerReq>*> thread_reqs;
+    std::latch init_barrier(NUM_THREADS);
+
     for (unsigned tidx = 0; tidx < NUM_THREADS; ++tidx) {
         thread_reqs.push_back(new std::vector<GarnerReq>);
-        threads.push_back(std::thread(client_thread_func, tidx, gn, pre_putval,
-                                      &pre_putvec, static_mode,
-                                      thread_reqs[tidx], &ser_counter));
+        threads.push_back(std::thread(
+            client_thread_func, tidx, gn, pre_putval, &pre_putvec, static_mode,
+            thread_reqs[tidx], &ser_counter, &init_barrier));
     }
     for (unsigned tidx = 0; tidx < NUM_THREADS; ++tidx) threads[tidx].join();
 
@@ -429,7 +437,7 @@ static void concurrency_test_round(garner::TxnProtocol protocol,
     integrity_check(gn, &thread_reqs, warmup_map);
 
     // run a serializability check against thread results
-    std::cout << " Doing serailizability check..." << std::endl;
+    std::cout << " Doing serializability check..." << std::endl;
     serializability_check(gn, &thread_reqs, warmup_map);
 
     // gn->PrintStats(true);

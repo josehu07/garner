@@ -7,11 +7,11 @@
 #include <limits>
 #include <mutex>
 #include <new>
-#include <set>
 #include <shared_mutex>
 #include <stdexcept>
 #include <string>
 #include <tuple>
+#include <unordered_set>
 #include <vector>
 
 #include "common.hpp"
@@ -39,7 +39,7 @@ class BPTree {
     PageRoot<K, V>* root = nullptr;
 
     // set of all pages allocated; this is for simplicity
-    std::set<Page<K>*> all_pages;
+    std::unordered_set<Page<K>*> all_pages;
     std::mutex all_pages_lock;
 
     /**
@@ -74,14 +74,16 @@ class BPTree {
      * Split the given page into two siblings, and propagate one new key
      * up to the parent node. May trigger cascading splits. The path
      * argument is a list of internal node pages, starting from root, leading
-     * to the node to be split.
+     * to the node to be split. The trigger_key argument is the key whose
+     * insertion triggered this split.
      *
      * Must have write latches already held on possibly affected pages.
      *
      * After this function returns, the path vector will be updated to
      * reflect the new path to the right sibling node.
      */
-    void SplitPage(Page<K>* page, std::vector<Page<K>*>& path);
+    void SplitPage(Page<K>* page, std::vector<Page<K>*>& path,
+                   const K& trigger_key);
 
    public:
     BPTree(size_t degree);

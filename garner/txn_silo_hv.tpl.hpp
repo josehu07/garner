@@ -60,19 +60,25 @@ void TxnSiloHV<K, V>::ExecWriteRecord(Record<K, V>* record, V value) {
 template <typename K, typename V>
 void TxnSiloHV<K, V>::ExecReadTraverseNode(Page<K>* page) {
     // append to read list
-    assert(!read_set.contains(page));
-    read_list.push_back(ReadListItem{
-        .is_record = false, .page = page, .version = page->hv_ver});
-    read_set[page] = read_list.size() - 1;
+    // may miss the page if it was already in the list pushed by a previous
+    // operation in the same transaction
+    if (!read_set.contains(page)) {
+        read_list.push_back(ReadListItem{
+            .is_record = false, .page = page, .version = page->hv_ver});
+        read_set[page] = read_list.size() - 1;
+    }
 }
 
 template <typename K, typename V>
 void TxnSiloHV<K, V>::ExecWriteTraverseNode(Page<K>* page) {
     // append to write list
-    assert(!write_set.contains(page));
-    write_list.push_back(
-        WriteListItem{.is_record = false, .page = page, .value = V()});
-    write_set[page] = write_list.size() - 1;
+    // may miss the page if it was already in the list pushed by a previous
+    // operation in the same transaction
+    if (!write_set.contains(page)) {
+        write_list.push_back(
+            WriteListItem{.is_record = false, .page = page, .value = V()});
+        write_set[page] = write_list.size() - 1;
+    }
 }
 
 template <typename K, typename V>
@@ -133,14 +139,15 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
     //
     // TODO: this protocol currently does not work with on-the-fly insertions!
     // TODO: do better than comparing keys in skipping children nodes.
-    K skip_until;
+    K skip_left_bound, skip_right_bound;
     bool skipping = false;
 
     for (auto&& ritem : read_list) {
         if (ritem.is_record) {
-            // if during skipping, check against skip_until key
+            // if during skipping, check against skip bounds
             if (skipping) {
-                if (ritem.record->key <= skip_until)
+                if (skip_left_bound <= ritem.record->key &&
+                    ritem.record->key <= skip_right_bound)
                     continue;
                 else
                     skipping = false;
@@ -178,9 +185,10 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
             }
 
         } else {
-            // if during skipping, check against skip_until key
+            // if during skipping, check against skip bounds
             if (skipping) {
-                if (ritem.page->keys.back() <= skip_until)
+                if (skip_left_bound <= ritem.page->keys.back() &&
+                    ritem.page->keys.back() <= skip_right_bound)
                     continue;
                 else
                     skipping = false;
@@ -198,8 +206,11 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
 
             // everything under this subtree have not been modified, skip
             // children nodes
-            skip_until = ritem.page->keys.back();
-            skipping = true;
+            if (ritem.page->keys.size() > 0) {
+                skip_left_bound = ritem.page->keys[0];
+                skip_right_bound = ritem.page->keys.back();
+                skipping = true;
+            }
         }
     }
 
@@ -232,6 +243,7 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
         } else {
             witem.page->hv_ver = new_version;
             --witem.page->hv_sem;
+            DEBUG("page hv_sem decrement %p", static_cast<void*>(witem.page));
         }
     }
 
