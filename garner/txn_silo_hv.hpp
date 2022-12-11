@@ -3,8 +3,8 @@
 #include <algorithm>
 #include <atomic>
 #include <iostream>
-#include <map>
 #include <tuple>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -34,6 +34,10 @@ class TxnSiloHV : public TxnCxt<K, V> {
 
     std::vector<ReadListItem> read_list;
 
+    // still maintain a map from node/record -> index in read_list, for fast
+    // lookups
+    std::unordered_map<void*, size_t> read_set;
+
     // write list storing node/record -> new value in traversal order
     // first field true means a B+-tree node, else a record
     struct WriteListItem {
@@ -46,6 +50,10 @@ class TxnSiloHV : public TxnCxt<K, V> {
     };
 
     std::vector<WriteListItem> write_list;
+
+    // still maintain a map from node/record -> index in write_list, for fast
+    // lookups
+    std::unordered_map<void*, size_t> write_set;
 
     // true if abort decision already made during execution
     bool must_abort = false;

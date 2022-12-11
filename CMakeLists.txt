@@ -34,11 +34,11 @@ add_test(
     NAME TestConcurTxnRun_Silo
     COMMAND $<TARGET_FILE:test_concur_txnrun> -p silo)
 add_test(
-    NAME TestSingleTxnRun_SiloHV
+    NAME TestSingleTxnRun_Silo_HV
     COMMAND $<TARGET_FILE:test_single_txnrun> -p silo_hv)
 add_test(
-    NAME TestConcurTxnRun_SiloHV_Static
+    NAME TestConcurTxnRun_Silo_HV_Static
     COMMAND $<TARGET_FILE:test_concur_txnrun> -p silo_hv -s)
 # add_test(
-#     NAME TestConcurTxnRun_SiloHV
+#     NAME TestConcurTxnRun_Silo_HV
 #     COMMAND $<TARGET_FILE:test_concur_txnrun> -p silo_hv)

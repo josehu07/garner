@@ -16,25 +16,19 @@ bool TxnSiloHV<K, V>::ExecReadRecord(Record<K, V>* record, V& value) {
     DEBUG("record latch R release %p", static_cast<void*>(record));
 
     // if is a phantom record without filled value, ignore
-    auto wit = std::find_if(write_list.begin(), write_list.end(),
-                            [&](const WriteListItem& w) {
-                                return w.is_record && w.record == record;
-                            });
-    if (wit == write_list.end() && !valid) return false;
+    if (!write_set.contains(record) && !valid) return false;
 
     // if in my local write set, read from there instead
-    if (wit != write_list.end())
-        value = wit->value;
-    else
+    if (write_set.contains(record)) {
+        assert(write_list[write_set[record]].is_record);
+        value = write_list[write_set[record]].value;
+    } else
         value = std::move(read_value);
 
     // insert into read set
-    auto rit = std::find_if(read_list.begin(), read_list.end(),
-                            [&](const ReadListItem& r) {
-                                return r.is_record && r.record == record;
-                            });
-    if (rit != read_list.end()) {
-        if (rit->version != read_version) {
+    if (read_set.contains(record)) {
+        assert(read_list[read_set[record]].is_record);
+        if (read_list[read_set[record]].version != read_version) {
             // same record read multiple times by the transaction and versions
             // already mismatch
             // we could just early abort here, but for simplicity, we save
@@ -44,6 +38,7 @@ bool TxnSiloHV<K, V>::ExecReadRecord(Record<K, V>* record, V& value) {
     } else {
         read_list.push_back(ReadListItem{
             .is_record = true, .record = record, .version = read_version});
+        read_set[record] = read_list.size() - 1;
     }
 
     return true;
@@ -52,36 +47,32 @@ bool TxnSiloHV<K, V>::ExecReadRecord(Record<K, V>* record, V& value) {
 template <typename K, typename V>
 void TxnSiloHV<K, V>::ExecWriteRecord(Record<K, V>* record, V value) {
     // do not actually write; save value locally
-    auto wit = std::find_if(write_list.begin(), write_list.end(),
-                            [&](const WriteListItem& w) {
-                                return w.is_record && w.record == record;
-                            });
-    if (wit != write_list.end())
-        wit->value = std::move(value);
-    else
+    if (write_set.contains(record)) {
+        assert(write_list[write_set[record]].is_record);
+        write_list[write_set[record]].value = std::move(value);
+    } else {
         write_list.push_back(WriteListItem{
             .is_record = true, .record = record, .value = std::move(value)});
+        write_set[record] = write_list.size() - 1;
+    }
 }
 
 template <typename K, typename V>
 void TxnSiloHV<K, V>::ExecReadTraverseNode(Page<K>* page) {
     // append to read list
-    assert(!std::any_of(
-        read_list.begin(), read_list.end(),
-        [&](const ReadListItem& r) { return !r.is_record && r.page == page; }));
+    assert(!read_set.contains(page));
     read_list.push_back(ReadListItem{
         .is_record = false, .page = page, .version = page->hv_ver});
+    read_set[page] = read_list.size() - 1;
 }
 
 template <typename K, typename V>
 void TxnSiloHV<K, V>::ExecWriteTraverseNode(Page<K>* page) {
     // append to write list
-    assert(!std::any_of(write_list.begin(), write_list.end(),
-                        [&](const WriteListItem& w) {
-                            return !w.is_record && w.page == page;
-                        }));
+    assert(!write_set.contains(page));
     write_list.push_back(
         WriteListItem{.is_record = false, .page = page, .value = V()});
+    write_set[page] = write_list.size() - 1;
 }
 
 template <typename K, typename V>
@@ -157,11 +148,7 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
 
             // if possibly locked by some writer other than me, abort
             bool latched = false;
-            bool me_writing =
-                std::any_of(write_list.begin(), write_list.end(),
-                            [&](const WriteListItem& w) {
-                                return w.is_record && w.record == ritem.record;
-                            });
+            bool me_writing = write_set.contains(ritem.record);
             if (!me_writing) {
                 latched = ritem.record->latch.try_lock_shared();
                 DEBUG("record latch R try_acquire %p %s",
@@ -201,12 +188,8 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
 
             // check semaphore field of tree page
             uint64_t hv_sem = ritem.page->hv_sem;
-            if (hv_sem > 1 || (hv_sem == 1 &&
-                               std::any_of(write_list.begin(), write_list.end(),
-                                           [&](const WriteListItem& w) {
-                                               return !w.is_record &&
-                                                      w.page == ritem.page;
-                                           }))) {
+            if (hv_sem > 1 ||
+                (hv_sem == 1 && !write_set.contains(ritem.page))) {
                 continue;
             }
 

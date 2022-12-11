@@ -58,11 +58,11 @@ TODO
 
 - [x] Basic concurrent BPTree
 - [x] Transaction manager
-- [ ] Basic HV-OCC protocol
-- [ ] Simple benchmarking
-- [ ] Try jemalloc/tcmalloc
+- [x] Basic HV-OCC protocol
 - [ ] Do better than comparing keys in skipping children nodes
 - [ ] Properly support on-the-fly insertions
+- [ ] More comprehensive benchmarking
+- [ ] Try jemalloc/tcmalloc
 - [ ] Better latching to reduce root contention
 - [ ] Remove shared_mutex in cases where an atomic is fine
 - [ ] Replace shared_mutex with userspace spinlock
