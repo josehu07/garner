@@ -80,6 +80,7 @@ Run a simple benchmarking of transaction throughput:
 - [ ] Better latching to reduce root contention
 - [ ] Remove shared_mutex in cases where an atomic is fine
 - [ ] Replace shared_mutex with userspace spinlock
+- [ ] Start HV protocol at certain depth (instead of root)
 - [ ] Implement Delete & related concurrency
 
 ## References
