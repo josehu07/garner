@@ -7,7 +7,7 @@
 Hierarchical validation in Silo-flavor optimistic concurrency control (OCC) on a B+-tree index.
 
 <p align="center">
-    <img width="420px" src="HV-OCC.png">
+    <img width="360px" src="HV-OCC.png">
 </p>
 
 The Garner codebase is aimed to be a well-documented, expandable, and easy-to-adopt in-memory transactional key-value store for future concurrency control research projects. This is an on-going work and is subject to change.
@@ -71,6 +71,8 @@ Run a simple benchmarking of transaction throughput:
 - [x] Basic concurrent BPTree
 - [x] Transaction manager
 - [x] Basic HV-OCC protocol
+- [ ] Correct dead-lock free write locking in validation
+- [ ] Correct left/right skip bound
 - [ ] Do better than comparing keys in skipping children nodes
 - [ ] Properly support on-the-fly insertions!
 - [ ] More comprehensive benchmarking
