@@ -28,6 +28,7 @@ static constexpr size_t VAL_LEN = 40;
 static unsigned NUM_THREADS = 8;
 static size_t MAX_OPS_PER_TXN = 10;
 static unsigned SCAN_PERCENTAGE = 25;
+// TODO: control scan range key space
 
 static unsigned NUM_ROUNDS = 3;
 static uint64_t ROUND_SECS = 5;
