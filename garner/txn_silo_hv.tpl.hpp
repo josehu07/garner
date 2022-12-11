@@ -5,7 +5,7 @@
 namespace garner {
 
 template <typename K, typename V>
-bool TxnSiloHV<K, V>::ExecReadRecord(Record<V>* record, V& value) {
+bool TxnSiloHV<K, V>::ExecReadRecord(Record<K, V>* record, V& value) {
     // fetch value and version
     record->latch.lock_shared();
     DEBUG("record latch R acquire %p", static_cast<void*>(record));
@@ -50,7 +50,7 @@ bool TxnSiloHV<K, V>::ExecReadRecord(Record<V>* record, V& value) {
 }
 
 template <typename K, typename V>
-void TxnSiloHV<K, V>::ExecWriteRecord(Record<V>* record, V value) {
+void TxnSiloHV<K, V>::ExecWriteRecord(Record<K, V>* record, V value) {
     // do not actually write; save value locally
     auto wit = std::find_if(write_list.begin(), write_list.end(),
                             [&](const WriteListItem& w) {
@@ -139,8 +139,22 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
         *ser_order = (*ser_counter)++;
 
     // phase 2
+    //
+    // TODO: this protocol currently does not work with on-the-fly insertions!
+    // TODO: do better than comparing keys in skipping children nodes.
+    K skip_until;
+    bool skipping = false;
+
     for (auto&& ritem : read_list) {
         if (ritem.is_record) {
+            // if during skipping, check against skip_until key
+            if (skipping) {
+                if (ritem.record->key <= skip_until)
+                    continue;
+                else
+                    skipping = false;
+            }
+
             // if possibly locked by some writer other than me, abort
             bool latched = false;
             bool me_writing =
@@ -175,8 +189,34 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
                 release_all_write_latches();
                 return false;
             }
+
         } else {
-            // TODO: skip proper children nodes from loop
+            // if during skipping, check against skip_until key
+            if (skipping) {
+                if (ritem.page->keys.back() <= skip_until)
+                    continue;
+                else
+                    skipping = false;
+            }
+
+            // check semaphore field of tree page
+            uint64_t hv_sem = ritem.page->hv_sem;
+            if (hv_sem > 1 || (hv_sem == 1 &&
+                               std::any_of(write_list.begin(), write_list.end(),
+                                           [&](const WriteListItem& w) {
+                                               return !w.is_record &&
+                                                      w.page == ritem.page;
+                                           }))) {
+                continue;
+            }
+
+            // check if tree page version changed by any committed writer
+            if (ritem.version != ritem.page->hv_ver) continue;
+
+            // everything under this subtree have not been modified, skip
+            // children nodes
+            skip_until = ritem.page->keys.back();
+            skipping = true;
         }
     }
 

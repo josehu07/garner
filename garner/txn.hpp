@@ -27,8 +27,8 @@ class TxnCxt {
      * Called upon a specific operation type within a transaction.
      * Concurrency control sub-types should implement these methods.
      */
-    virtual bool ExecReadRecord(Record<V>* record, V& value) = 0;
-    virtual void ExecWriteRecord(Record<V>* record, V value) = 0;
+    virtual bool ExecReadRecord(Record<K, V>* record, V& value) = 0;
+    virtual void ExecWriteRecord(Record<K, V>* record, V value) = 0;
     virtual void ExecReadTraverseNode(Page<K>* page) = 0;
     virtual void ExecWriteTraverseNode(Page<K>* page) = 0;
 

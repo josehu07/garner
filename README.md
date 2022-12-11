@@ -61,9 +61,11 @@ TODO
 - [ ] Basic HV-OCC protocol
 - [ ] Simple benchmarking
 - [ ] Try jemalloc/tcmalloc
+- [ ] Do better than comparing keys in skipping children nodes
+- [ ] Properly support on-the-fly insertions
+- [ ] Better latching to reduce root contention
 - [ ] Remove shared_mutex in cases where an atomic is fine
 - [ ] Replace shared_mutex with userspace spinlock
-- [ ] Better latching to reduce root contention
 - [ ] Implement Delete & related concurrency
 
 ## References

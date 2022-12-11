@@ -217,7 +217,7 @@ int main(int argc, char* argv[]) {
         cxxopts::value<size_t>(MAX_OPS_PER_TXN)->default_value("20"));
     auto result = cmd_args.parse(argc, argv);
 
-    std::set<std::string> valid_protocols{"none", "silo"};
+    std::set<std::string> valid_protocols{"none", "silo", "silo_hv"};
 
     if (help) {
         printf("%s", cmd_args.help().c_str());

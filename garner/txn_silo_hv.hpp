@@ -17,8 +17,7 @@
 namespace garner {
 
 /**
- * Silo_HV transaction context type.
- * https://dl.acm.org/doi/10.1145/2517349.2522713
+ * Silo transaction context type with hierarchical validation.
  */
 template <typename K, typename V>
 class TxnSiloHV : public TxnCxt<K, V> {
@@ -28,7 +27,7 @@ class TxnSiloHV : public TxnCxt<K, V> {
         bool is_record;
         union {
             Page<K>* page;
-            Record<V>* record;
+            Record<K, V>* record;
         };
         uint64_t version;
     };
@@ -41,7 +40,7 @@ class TxnSiloHV : public TxnCxt<K, V> {
         bool is_record;
         union {
             Page<K>* page;
-            Record<V>* record;
+            Record<K, V>* record;
         };
         V value;
     };
@@ -65,12 +64,12 @@ class TxnSiloHV : public TxnCxt<K, V> {
      * Returns true if read is successful, or false if reading a phantom
      * record inserted by some other transaction without filled value.
      */
-    bool ExecReadRecord(Record<V>* record, V& value);
+    bool ExecReadRecord(Record<K, V>* record, V& value);
 
     /**
      * Save record to write set and locally remember attempted write value.
      */
-    void ExecWriteRecord(Record<V>* record, V value);
+    void ExecWriteRecord(Record<K, V>* record, V value);
 
     /**
      * Save traversal information on page node for read.

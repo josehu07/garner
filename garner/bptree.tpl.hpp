@@ -311,7 +311,7 @@ void BPTree<K, V>::Put(K key, V value, TxnCxt<K, V>* txn) {
 
     // inject key into the leaf node and get pointer to record
     assert(leaf->NumKeys() < degree);
-    Record<V>* record = nullptr;
+    Record<K, V>* record = nullptr;
     ssize_t idx = leaf->SearchKey(key);
     if (leaf->type == PAGE_ROOT)
         record = reinterpret_cast<PageRoot<K, V>*>(leaf)->Inject(idx, key);
@@ -362,7 +362,7 @@ bool BPTree<K, V>::Get(const K& key, V& value, TxnCxt<K, V>* txn) {
     }
 
     // found match key, fetch record
-    Record<V>* record = nullptr;
+    Record<K, V>* record = nullptr;
     if (leaf->type == PAGE_ROOT)
         record = reinterpret_cast<PageRoot<K, V>*>(leaf)->records[idx];
     else
@@ -442,7 +442,7 @@ size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
                 return nrecords;
             }
 
-            Record<V>* record;
+            Record<K, V>* record;
             if (leaf->type == PAGE_ROOT)
                 record = reinterpret_cast<PageRoot<K, V>*>(leaf)->records[idx];
             else

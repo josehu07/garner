@@ -18,6 +18,7 @@
 #include "garner.hpp"
 #include "utils.hpp"
 
+static constexpr size_t TEST_DEGREE = 6;
 static constexpr size_t KEY_LEN = 2;
 
 static unsigned NUM_ROUNDS = 5;
@@ -163,8 +164,6 @@ static void integrity_check(garner::Garner* gn,
 }
 
 static void concurrency_test_round() {
-    constexpr size_t TEST_DEGREE = 6;
-
     auto* gn = garner::Garner::Open(TEST_DEGREE, garner::PROTOCOL_NONE);
 
     std::cout << " Degree=" << TEST_DEGREE << " #threads=" << NUM_THREADS

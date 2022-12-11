@@ -22,10 +22,10 @@ template <typename K, typename V>
 class TxnSilo : public TxnCxt<K, V> {
    private:
     // read set storing record -> read version
-    std::map<Record<V>*, uint64_t> read_set;
+    std::map<Record<K, V>*, uint64_t> read_set;
 
     // write set storing record -> new value
-    std::map<Record<V>*, V> write_set;
+    std::map<Record<K, V>*, V> write_set;
 
     // true if abort decision already made during execution
     bool must_abort = false;
@@ -43,12 +43,12 @@ class TxnSilo : public TxnCxt<K, V> {
      * Returns true if read is successful, or false if reading a phantom
      * record inserted by some other transaction without filled value.
      */
-    bool ExecReadRecord(Record<V>* record, V& value);
+    bool ExecReadRecord(Record<K, V>* record, V& value);
 
     /**
      * Save record to write set and locally remember attempted write value.
      */
-    void ExecWriteRecord(Record<V>* record, V value);
+    void ExecWriteRecord(Record<K, V>* record, V value);
 
     /**
      * Not used.

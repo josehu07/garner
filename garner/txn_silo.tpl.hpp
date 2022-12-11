@@ -5,7 +5,7 @@
 namespace garner {
 
 template <typename K, typename V>
-bool TxnSilo<K, V>::ExecReadRecord(Record<V>* record, V& value) {
+bool TxnSilo<K, V>::ExecReadRecord(Record<K, V>* record, V& value) {
     // fetch value and version
     record->latch.lock_shared();
     DEBUG("record latch R acquire %p", static_cast<void*>(record));
@@ -40,7 +40,7 @@ bool TxnSilo<K, V>::ExecReadRecord(Record<V>* record, V& value) {
 }
 
 template <typename K, typename V>
-void TxnSilo<K, V>::ExecWriteRecord(Record<V>* record, V value) {
+void TxnSilo<K, V>::ExecWriteRecord(Record<K, V>* record, V value) {
     // do not actually write; save value locally
     write_set[record] = std::move(value);
 }
@@ -52,7 +52,7 @@ bool TxnSilo<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
 
     // phase 1: lock for writes
     // sort in memory address order to prevent deadlocks
-    std::vector<Record<V>*> write_vec;
+    std::vector<Record<K, V>*> write_vec;
     write_vec.reserve(write_set.size());
 
     for (auto&& [record, _] : write_set) write_vec.push_back(record);
