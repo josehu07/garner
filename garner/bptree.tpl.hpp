@@ -63,7 +63,8 @@ bool BPTree<K, V>::IsConcurrencySafe(const Page<K>* page) const {
 
 template <typename K, typename V>
 std::tuple<std::vector<Page<K>*>, std::vector<Page<K>*>>
-BPTree<K, V>::TraverseToLeaf(const K& key, LatchMode latch_mode) {
+BPTree<K, V>::TraverseToLeaf(const K& key, LatchMode latch_mode,
+                             TxnCxt<K, V>* txn) {
     Page<K>* page = root;
     unsigned level = 0, height;
     std::vector<Page<K>*> path;
@@ -105,8 +106,12 @@ BPTree<K, V>::TraverseToLeaf(const K& key, LatchMode latch_mode) {
         if (latch_mode == LATCH_READ) {
             child->latch.lock_shared();
             DEBUG("page latch R acquire %p", static_cast<void*>(child));
+            // do concurrency control internal node traversal logic in
+            // this function only for nodes not latched at return
+            if (txn != nullptr) txn->ExecReadTraverseNode(page);
             page->latch.unlock_shared();
             DEBUG("page latch R release %p", static_cast<void*>(page));
+
         } else if (latch_mode == LATCH_WRITE) {
             child->latch.lock();
             DEBUG("page latch W acquire %p", static_cast<void*>(child));
@@ -114,6 +119,10 @@ BPTree<K, V>::TraverseToLeaf(const K& key, LatchMode latch_mode) {
             if (IsConcurrencySafe(child)) {
                 assert(write_latched_pages.back() == page);
                 for (auto* ancestor : write_latched_pages) {
+                    // do concurrency control internal node traversal logic in
+                    // this function only for nodes not latched at return
+                    if (txn != nullptr)
+                        txn->ExecWriteTraverseNode(ancestor, ancestor->height);
                     ancestor->latch.unlock();
                     DEBUG("page latch W release %p",
                           static_cast<void*>(ancestor));
@@ -371,7 +380,7 @@ void BPTree<K, V>::Put(K key, V value, TxnCxt<K, V>* txn) {
     // traverse to the correct leaf node and read
     std::vector<Page<K>*> path;
     std::vector<Page<K>*> write_latched_pages;
-    std::tie(path, write_latched_pages) = TraverseToLeaf(key, LATCH_WRITE);
+    std::tie(path, write_latched_pages) = TraverseToLeaf(key, LATCH_WRITE, txn);
     assert(path.size() > 0);
     Page<K>* leaf = path.back();
 
@@ -388,13 +397,20 @@ void BPTree<K, V>::Put(K key, V value, TxnCxt<K, V>* txn) {
     // if this leaf node becomes full, do split
     if (leaf->NumKeys() >= degree) SplitPage(leaf, path, key);
 
-    // call concurrency control algorithm's traversal logic
-    if (txn != nullptr)
-        for (auto* page : path) txn->ExecWriteTraverseNode(page);
-
-    // release held page write latch(es)
+    // call concurrency control algorithm's internal node traversal logic on
+    // still latched nodes
     assert(write_latched_pages.size() > 0);
     assert(write_latched_pages.back() == leaf);
+    if (txn != nullptr) {
+        bool latched_part_begins = false;
+        for (auto* page : path) {
+            if (page == write_latched_pages[0]) latched_part_begins = true;
+            if (latched_part_begins)
+                txn->ExecWriteTraverseNode(page, page->height);
+        }
+    }
+
+    // release held page write latch(es)
     for (auto* page : write_latched_pages) {
         page->latch.unlock();
         DEBUG("page latch W release %p", static_cast<void*>(page));
@@ -439,9 +455,9 @@ bool BPTree<K, V>::Get(const K& key, V& value, TxnCxt<K, V>* txn) {
         record = reinterpret_cast<PageLeaf<K, V>*>(leaf)->records[idx];
     assert(record != nullptr);
 
-    // call concurrency control algorithm's traversal logic
-    if (txn != nullptr)
-        for (auto* page : path) txn->ExecReadTraverseNode(page);
+    // call concurrency control algorithm's internal node traversal logic on
+    // still latched leaf node
+    if (txn != nullptr) txn->ExecReadTraverseNode(leaf);
 
     // release held page read latch
     leaf->latch.unlock_shared();
@@ -482,9 +498,9 @@ size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
     assert(lpath.size() > 0);
     Page<K>* lleaf = lpath.back();
 
-    // call concurrency control algorithm's traversal logic
-    if (txn != nullptr)
-        for (auto* page : lpath) txn->ExecReadTraverseNode(page);
+    // call concurrency control algorithm's internal node traversal logic on
+    // still latched leaf node
+    if (txn != nullptr) txn->ExecReadTraverseNode(lleaf);
 
     // read out the leaf pages in a loop by following sibling chains,
     // gathering records in range

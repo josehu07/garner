@@ -91,6 +91,6 @@ if __name__ == "__main__":
             print(f"Error: invalid scan percentage {scan_percentage}")
             exit(1)
 
-    # run_simple_benchmarks(args.scan_percentages, args.output_prefix)
+    run_simple_benchmarks(args.scan_percentages, args.output_prefix)
     results = parse_results(args.scan_percentages, args.output_prefix)
     plot_results(args.scan_percentages, results, args.output_prefix)

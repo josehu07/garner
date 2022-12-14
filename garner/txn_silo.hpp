@@ -54,7 +54,8 @@ class TxnSilo : public TxnCxt<K, V> {
      * Not used.
      */
     void ExecReadTraverseNode([[maybe_unused]] Page<K>* page) {}
-    void ExecWriteTraverseNode([[maybe_unused]] Page<K>* page) {}
+    void ExecWriteTraverseNode([[maybe_unused]] Page<K>* page,
+                               [[maybe_unused]] unsigned height) {}
 
     /**
      * Silo validation and commit protocol.

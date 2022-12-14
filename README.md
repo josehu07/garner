@@ -71,7 +71,7 @@ Run a simple benchmarking of transaction throughput:
 - [x] Basic concurrent BPTree
 - [x] Transaction manager
 - [x] Basic HV-OCC protocol
-- [ ] Correct dead-lock free write locking in validation
+- [x] Deadlock-free write locking in validation
 - [ ] Correct left/right skip bound
 - [ ] Do better than comparing keys in skipping children nodes
 - [ ] Properly support on-the-fly insertions!
