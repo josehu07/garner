@@ -82,6 +82,7 @@ Run a simple benchmarking of transaction throughput:
 - [ ] Replace shared_mutex with userspace spinlock
 - [ ] Start HV protocol at certain level (instead of root)
 - [ ] Implement Delete & related concurrency
+- [ ] Implement proper durability logging
 
 ## References
 

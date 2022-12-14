@@ -5,8 +5,10 @@
 #include <cstring>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <mutex>
 #include <new>
+#include <set>
 #include <shared_mutex>
 #include <stdexcept>
 #include <string>

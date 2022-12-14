@@ -116,7 +116,7 @@ std::ostream& operator<<(std::ostream& s, const Page<K>& page) {
 template <typename K, typename V>
 struct PageLeaf : public Page<K> {
     // pointer to right sibling
-    Page<K>* next = nullptr;
+    PageLeaf<K, V>* next = nullptr;
 
     // records according to sorted keys, keys[0] -> records[0], etc.
     std::vector<Record<K, V>*> records;
@@ -161,6 +161,9 @@ std::ostream& operator<<(std::ostream& s, const PageLeaf<K, V>& page) {
  */
 template <typename K, typename V>
 struct PageItnl : public Page<K> {
+    // pointer to right sibling
+    PageItnl<K, V>* next = nullptr;
+
     // pointers to child pages
     // children[0] is the one < keys[0];
     // children[1] is the one >= keys[0] and < keys[1], etc.
@@ -168,7 +171,7 @@ struct PageItnl : public Page<K> {
 
     PageItnl() = delete;
     PageItnl(size_t degree, unsigned height)
-        : Page<K>(PAGE_ITNL, degree, height), children() {
+        : Page<K>(PAGE_ITNL, degree, height), next(nullptr), children() {
         children.reserve(degree + 1);
     }
 

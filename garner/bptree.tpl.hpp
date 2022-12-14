@@ -179,7 +179,7 @@ void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path,
             spage->keys.push_back(mkey);
 
         } else {
-            // splitting root into two internal nodes
+            // splitting root into two new internal nodes
             DEBUG("split root internal %p", static_cast<void*>(spage));
 
             auto* lpage = NewPageItnl(spage->height);
@@ -193,6 +193,9 @@ void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path,
             std::copy(spage->children.begin(),
                       spage->children.begin() + mpos + 1,
                       std::back_inserter(lpage->children));
+
+            // set left child's next pointer
+            lpage->next = rpage;
 
             // populate right child
             std::copy(spage->keys.begin() + mpos + 1, spage->keys.end(),
@@ -267,11 +270,17 @@ void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path,
             std::copy(spage->children.begin() + mpos + 1, spage->children.end(),
                       std::back_inserter(rpage->children));
 
+            // set right child's next pointer
+            rpage->next = spage->next;
+
             // trim current node
             mkey = spage->keys[mpos];
             spage->keys.erase(spage->keys.begin() + mpos, spage->keys.end());
             spage->children.erase(spage->children.begin() + mpos + 1,
                                   spage->children.end());
+
+            // make current node's next link to new right node
+            spage->next = rpage;
         } else
             throw GarnerException("unknown page type encountered");
 
@@ -578,8 +587,9 @@ BPTreeStats BPTree<K, V>::GatherStats(bool print_pages) {
     stats.nkeys_itnl = 0;
     stats.nkeys_leaf = 0;
 
-    PageLeaf<K, V>* last_leaf = nullptr;
-    Page<K>* last_page = nullptr;
+    std::map<unsigned, Page<K>*> last_page_at_height;
+    std::set<unsigned> height_completed;
+    Page<K>* last_page;
 
     auto iterate_func = [&](Page<K>* page) {
         if (page->type == PAGE_ROOT) stats.height = page->height;
@@ -605,6 +615,24 @@ BPTreeStats BPTree<K, V>::GatherStats(bool print_pages) {
                                       " of an internal node" + ", expect " +
                                       std::to_string(last_page->height + 1));
             }
+            if (last_page_at_height.contains(page->height) &&
+                reinterpret_cast<PageItnl<K, V>*>(
+                    last_page_at_height[page->height])
+                        ->next != page) {
+                throw GarnerException(
+                    "stats: incorrect internal chain pointer");
+            }
+            last_page_at_height[page->height] = page;
+            if (height_completed.contains(page->height)) {
+                throw GarnerException("stats: an intenral node at height " +
+                                      std::to_string(page->height) +
+                                      " has null next pointer but is not the "
+                                      "last node in level");
+            }
+            if (page->type == PAGE_ITNL &&
+                reinterpret_cast<PageItnl<K, V>*>(page)->next == nullptr) {
+                height_completed.insert(page->height);
+            }
 
             stats.npages++;
             stats.npages_itnl++;
@@ -616,9 +644,19 @@ BPTreeStats BPTree<K, V>::GatherStats(bool print_pages) {
                                       std::to_string(page->height) +
                                       " of a leaf node");
             }
-            if (last_leaf != nullptr && last_leaf->next != page)
+            if (last_page_at_height.contains(1) &&
+                reinterpret_cast<PageLeaf<K, V>*>(last_page_at_height[1])
+                        ->next != page) {
                 throw GarnerException("stats: incorrect leaf chain pointer");
-            last_leaf = reinterpret_cast<PageLeaf<K, V>*>(page);
+            }
+            last_page_at_height[1] = page;
+            if (height_completed.contains(1)) {
+                throw GarnerException(
+                    "stats: a leaf node has null next pointer but is not the "
+                    "last node in level");
+            }
+            if (reinterpret_cast<PageLeaf<K, V>*>(page)->next == nullptr)
+                height_completed.insert(1);
 
             stats.npages++;
             stats.npages_leaf++;
@@ -628,6 +666,7 @@ BPTreeStats BPTree<K, V>::GatherStats(bool print_pages) {
             throw GarnerException("unknown page type encountered");
 
         last_page = page;
+        last_page_at_height[page->height] = page;
     };
 
     // scan through all pages
