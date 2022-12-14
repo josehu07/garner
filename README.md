@@ -22,7 +22,7 @@ sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
 sudo apt update
 sudo apt upgrade
 
-sudo apt install build-essential gcc-11 g++-11 cpp-11 cmake clang-format
+sudo apt install build-essential gcc-11 g++-11 cpp-11 cmake
 
 sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 100
 sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-11 100
@@ -51,6 +51,7 @@ make -j
 Run all tests (recommend release mode build):
 
 ```bash
+cd build
 ctest
 ```
 
@@ -64,6 +65,23 @@ Run a simple benchmarking of transaction throughput:
 
 ```bash
 ./bench/simple_bench -h
+```
+
+## Develop
+
+<details>
+<summary>Install development dependencies...</summary>
+
+```bash
+sudo apt install clang-format python3-pip
+pip3 install black matplotlib
+```
+</details>
+
+Run formatter for all source code files:
+
+```bash
+./scripts/format-all.sh
 ```
 
 ## TODO List
