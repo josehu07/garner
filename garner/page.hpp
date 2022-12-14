@@ -52,6 +52,9 @@ struct Page {
     // max number of keys
     const size_t degree = 0;
 
+    // height of this node in tree; height == 1 means leaf, > 1 means internal
+    unsigned height = 0;
+
     // read-write mutex as latch
     std::shared_mutex latch;
 
@@ -63,8 +66,14 @@ struct Page {
     std::vector<K> keys;
 
     Page() = delete;
-    Page(PageType type, size_t degree)
-        : type(type), degree(degree), latch(), hv_sem(0), hv_ver(0), keys() {
+    Page(PageType type, size_t degree, unsigned height)
+        : type(type),
+          degree(degree),
+          height(height),
+          latch(),
+          hv_sem(0),
+          hv_ver(0),
+          keys() {
         keys.reserve(degree);
     }
 
@@ -93,7 +102,7 @@ struct Page {
 
 template <typename K>
 std::ostream& operator<<(std::ostream& s, const Page<K>& page) {
-    s << "Page{type=" << PageTypeStr(page.type)
+    s << "Page{type=" << PageTypeStr(page.type) << ",height=" << page.height
       << ",nkeys=" << page.keys.size();
     s << ",keys=[";
     for (auto&& k : page.keys) s << k << ",";
@@ -114,7 +123,7 @@ struct PageLeaf : public Page<K> {
 
     PageLeaf() = delete;
     PageLeaf(size_t degree)
-        : Page<K>(PAGE_LEAF, degree), next(nullptr), records() {
+        : Page<K>(PAGE_LEAF, degree, 1), next(nullptr), records() {
         records.reserve(degree);
     }
 
@@ -137,7 +146,7 @@ struct PageLeaf : public Page<K> {
 
 template <typename K, typename V>
 std::ostream& operator<<(std::ostream& s, const PageLeaf<K, V>& page) {
-    s << "Page{type=" << PageTypeStr(page.type)
+    s << "Page{type=" << PageTypeStr(page.type) << ",height=" << page.height
       << ",nkeys=" << page.keys.size();
     s << ",keys=[";
     for (auto&& k : page.keys) s << k << ",";
@@ -158,7 +167,8 @@ struct PageItnl : public Page<K> {
     std::vector<Page<K>*> children;
 
     PageItnl() = delete;
-    PageItnl(size_t degree) : Page<K>(PAGE_ITNL, degree), children() {
+    PageItnl(size_t degree, unsigned height)
+        : Page<K>(PAGE_ITNL, degree, height), children() {
         children.reserve(degree + 1);
     }
 
@@ -179,7 +189,7 @@ struct PageItnl : public Page<K> {
 
 template <typename K, typename V>
 std::ostream& operator<<(std::ostream& s, const PageItnl<K, V>& page) {
-    s << "Page{type=" << PageTypeStr(page.type)
+    s << "Page{type=" << PageTypeStr(page.type) << ",height=" << page.height
       << ",nkeys=" << page.keys.size();
     s << ",keys=[";
     for (auto&& k : page.keys) s << k << ",";
@@ -194,16 +204,13 @@ std::ostream& operator<<(std::ostream& s, const PageItnl<K, V>& page) {
  */
 template <typename K, typename V>
 struct PageRoot : public Page<K> {
-    // current depth of tree
-    unsigned depth = 0;
-
     // page content sorted according to key
-    std::vector<Record<K, V>*> records;  // depth == 1: root is the only leaf
-    std::vector<Page<K>*> children;      // depth > 1: root is non-leaf
+    std::vector<Record<K, V>*> records;  // height == 1: root is the only leaf
+    std::vector<Page<K>*> children;      // height > 1: root is non-leaf
 
     PageRoot() = delete;
     PageRoot(size_t degree)
-        : Page<K>(PAGE_ROOT, degree), depth(1), records(), children() {
+        : Page<K>(PAGE_ROOT, degree, 1), records(), children() {
         records.reserve(degree);
         children.reserve(degree + 1);
     }
@@ -214,7 +221,7 @@ struct PageRoot : public Page<K> {
     ~PageRoot() = default;
 
     /**
-     * Root page may act as either type, depending on depth.
+     * Root page may act as either type, depending on height.
      */
     Record<K, V>* Inject(ssize_t search_idx, K key);
     void Inject(ssize_t search_idx, K key, Page<K>* lpage, Page<K>* rpage);
@@ -222,7 +229,7 @@ struct PageRoot : public Page<K> {
 
 template <typename K, typename V>
 std::ostream& operator<<(std::ostream& s, const PageRoot<K, V>& page) {
-    s << "Page{type=" << PageTypeStr(page.type)
+    s << "Page{type=" << PageTypeStr(page.type) << ",height=" << page.height
       << ",nkeys=" << page.keys.size();
     s << ",keys=[";
     for (auto&& k : page.keys) s << k << ",";
@@ -230,7 +237,7 @@ std::ostream& operator<<(std::ostream& s, const PageRoot<K, V>& page) {
     for (auto* v : page.records) s << *v << ",";
     s << "],children=[";
     for (auto* c : page.children) s << c << ",";
-    s << "],depth=" << page.depth << "}";
+    s << "]}";
     return s;
 }
 

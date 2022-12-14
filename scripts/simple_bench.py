@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
+import matplotlib
+matplotlib.use('Agg')
+
 import argparse
 import subprocess
 import os
+import matplotlib.pyplot as plt
 
 GARNER_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 PROG_SIMPLE_BENCH = f"{GARNER_DIR}/build/bench/simple_bench"
@@ -21,6 +25,10 @@ def run_simple_benchmarks(scan_percentages, output_prefix):
 
 def parse_results(scan_percentages, output_prefix):
     print("Parsing benchmark results...")
+    results = {}
+    for protocol in PROTOCOLS:
+        results[protocol] = []
+
     for scan_percentage in sorted(scan_percentages):
         for protocol in PROTOCOLS:
             result_filename = f"{output_prefix}-{protocol}-c{scan_percentage}.log"
@@ -44,9 +52,32 @@ def parse_results(scan_percentages, output_prefix):
                 avg_throughput = sum(throughputs) / len(throughputs)
                 print(f" Result:  scan {scan_percentage:3d}%  {protocol:7s}"
                       f"  abort {avg_abort_rate:4.1f}%  {avg_throughput:.2f} txns/sec")
+                
+                results[protocol].append(avg_throughput)
 
-def plot_results(results):
-    pass
+    return results
+
+def plot_results(scan_percentages, results, output_prefix):
+    protocol_marker = {"silo": 'o', "silo_hv": 'v'}
+    protocol_color = {"silo": 'steelblue', "silo_hv": 'orange'}
+
+    plt.rcParams.update({'font.size': 18})
+
+    for protocol in PROTOCOLS:
+        xs = scan_percentages
+        ys = results[protocol]
+        assert(len(xs) == len(ys))
+
+        ys = list(map(lambda t: t / 1000.0, ys))
+        plt.plot(xs, ys, marker=protocol_marker[protocol], color=protocol_color[protocol],
+                         label=protocol)
+    
+    plt.ylabel("Throughput (x1000 txns/sec)")
+    plt.xlabel("Scan percentage (%)")
+    plt.legend()
+    plt.tight_layout()
+
+    plt.savefig(f"{output_prefix}-plot.png", dpi=200)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -60,6 +91,6 @@ if __name__ == "__main__":
             print(f"Error: invalid scan percentage {scan_percentage}")
             exit(1)
 
-    run_simple_benchmarks(args.scan_percentages, args.output_prefix)
+    # run_simple_benchmarks(args.scan_percentages, args.output_prefix)
     results = parse_results(args.scan_percentages, args.output_prefix)
-    # plot_results(results)
+    plot_results(args.scan_percentages, results, args.output_prefix)

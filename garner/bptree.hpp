@@ -46,7 +46,7 @@ class BPTree {
      * Allocate a new page of specific type.
      */
     PageLeaf<K, V>* NewPageLeaf();
-    PageItnl<K, V>* NewPageItnl();
+    PageItnl<K, V>* NewPageItnl(unsigned height);
 
     /**
      * Returns true if given page is safe from structural mutations in

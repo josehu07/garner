@@ -31,7 +31,7 @@ BPTree<K, V>::~BPTree() {
             for (auto* record : leaf->records) delete record;
         } else if (page->type == PAGE_ROOT) {
             auto* root = reinterpret_cast<PageRoot<K, V>*>(page);
-            if (root->depth == 1)
+            if (root->height == 1)
                 for (auto* record : root->records) delete record;
         }
 
@@ -51,8 +51,8 @@ PageLeaf<K, V>* BPTree<K, V>::NewPageLeaf() {
 }
 
 template <typename K, typename V>
-PageItnl<K, V>* BPTree<K, V>::NewPageItnl() {
-    auto* page = new PageItnl<K, V>(degree);
+PageItnl<K, V>* BPTree<K, V>::NewPageItnl(unsigned height) {
+    auto* page = new PageItnl<K, V>(degree, height);
     if (page == nullptr)
         throw GarnerException("failed to allocate memory for new page");
     std::lock_guard<std::mutex> lg(all_pages_lock);
@@ -70,7 +70,7 @@ template <typename K, typename V>
 std::tuple<std::vector<Page<K>*>, std::vector<Page<K>*>>
 BPTree<K, V>::TraverseToLeaf(const K& key, LatchMode latch_mode) {
     Page<K>* page = root;
-    unsigned level = 0, depth;
+    unsigned level = 0, height;
     std::vector<Page<K>*> path;
     std::vector<Page<K>*> write_latched_pages;
 
@@ -83,9 +83,9 @@ BPTree<K, V>::TraverseToLeaf(const K& key, LatchMode latch_mode) {
         write_latched_pages.push_back(page);
     }
 
-    // read out depth of tree, check if root is the only leaf
-    depth = reinterpret_cast<PageRoot<K, V>*>(page)->depth;
-    if (depth == 1) {
+    // read out height of tree, check if root is the only leaf
+    height = reinterpret_cast<PageRoot<K, V>*>(page)->height;
+    if (height == 1) {
         path.push_back(page);
         // latch on root still held on return
         return std::make_tuple(path, write_latched_pages);
@@ -129,7 +129,7 @@ BPTree<K, V>::TraverseToLeaf(const K& key, LatchMode latch_mode) {
         }
 
         level++;
-        if (level == depth - 1) {
+        if (level == height - 1) {
             path.push_back(child);
             // proper latch(es) still held on return
             return std::make_tuple(path, write_latched_pages);
@@ -153,7 +153,7 @@ void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path,
         Page<K>*lpage_saved, *rpage_saved;
         K mkey;
 
-        if (spage->depth == 1) {
+        if (spage->height == 1) {
             // special case of the very first split of root leaf
             DEBUG("split root leaf %p", static_cast<void*>(spage));
 
@@ -187,8 +187,8 @@ void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path,
             // splitting root into two internal nodes
             DEBUG("split root internal %p", static_cast<void*>(spage));
 
-            auto* lpage = NewPageItnl();
-            auto* rpage = NewPageItnl();
+            auto* lpage = NewPageItnl(spage->height);
+            auto* rpage = NewPageItnl(spage->height);
             lpage_saved = lpage;
             rpage_saved = rpage;
 
@@ -212,10 +212,10 @@ void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path,
             spage->keys.push_back(mkey);
         }
 
-        // set new root child pointers, increment tree depth
+        // set new root child pointers, increment tree height
         spage->children.push_back(lpage_saved);
         spage->children.push_back(rpage_saved);
-        spage->depth++;
+        spage->height++;
 
         // update path vector
         if (mkey <= trigger_key)
@@ -263,7 +263,7 @@ void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path,
             DEBUG("split internal %p", static_cast<void*>(page));
 
             auto* spage = reinterpret_cast<PageItnl<K, V>*>(page);
-            auto* rpage = NewPageItnl();
+            auto* rpage = NewPageItnl(page->height);
             rpage_saved = rpage;
 
             // populate right child

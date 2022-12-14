@@ -80,10 +80,11 @@ Run a simple benchmarking of transaction throughput:
 - [ ] Better latching to reduce root contention
 - [ ] Remove shared_mutex in cases where an atomic is fine
 - [ ] Replace shared_mutex with userspace spinlock
-- [ ] Start HV protocol at certain depth (instead of root)
+- [ ] Start HV protocol at certain level (instead of root)
 - [ ] Implement Delete & related concurrency
 
 ## References
 
 - [Latch crabbing (Latch coupling)](https://15445.courses.cs.cmu.edu/fall2018/slides/09-indexconcurrency.pdf)
 - [Silo OCC](https://dl.acm.org/doi/10.1145/2517349.2522713)
+- [Adaptive OCC](http://www.vldb.org/pvldb/vol12/p584-guo.pdf)
