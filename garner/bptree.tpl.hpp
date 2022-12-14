@@ -605,7 +605,7 @@ BPTreeStats BPTree<K, V>::GatherStats(bool print_pages) {
 
     std::map<unsigned, Page<K>*> last_page_at_height;
     std::set<unsigned> height_completed;
-    Page<K>* last_page;
+    Page<K>* last_page = nullptr;
 
     auto iterate_func = [&](Page<K>* page) {
         if (page->type == PAGE_ROOT) stats.height = page->height;
