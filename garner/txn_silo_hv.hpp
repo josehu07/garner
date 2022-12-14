@@ -6,9 +6,11 @@
 #include <tuple>
 #include <unordered_map>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "common.hpp"
+#include "page.hpp"
 #include "record.hpp"
 #include "txn.hpp"
 
@@ -46,7 +48,7 @@ class TxnSiloHV : public TxnCxt<K, V> {
             Page<K>* page;
             Record<K, V>* record;
         };
-        V value;
+        std::variant<unsigned, V> height_or_value;
     };
 
     std::vector<WriteListItem> write_list;
@@ -87,7 +89,7 @@ class TxnSiloHV : public TxnCxt<K, V> {
     /**
      * Save traversal information on page node for write.
      */
-    void ExecWriteTraverseNode(Page<K>* page);
+    void ExecWriteTraverseNode(Page<K>* page, unsigned height);
 
     /**
      * Silo hierarchical validation and commit protocol.

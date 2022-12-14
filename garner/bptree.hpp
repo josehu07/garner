@@ -5,8 +5,10 @@
 #include <cstring>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <mutex>
 #include <new>
+#include <set>
 #include <shared_mutex>
 #include <stdexcept>
 #include <string>
@@ -15,6 +17,7 @@
 #include <vector>
 
 #include "common.hpp"
+#include "include/garner.hpp"
 #include "page.hpp"
 #include "record.hpp"
 #include "txn.hpp"
@@ -38,15 +41,11 @@ class BPTree {
     // pointer to root page, set at initiailization
     PageRoot<K, V>* root = nullptr;
 
-    // set of all pages allocated; this is for simplicity
-    std::unordered_set<Page<K>*> all_pages;
-    std::mutex all_pages_lock;
-
     /**
      * Allocate a new page of specific type.
      */
     PageLeaf<K, V>* NewPageLeaf();
-    PageItnl<K, V>* NewPageItnl();
+    PageItnl<K, V>* NewPageItnl(unsigned height);
 
     /**
      * Returns true if given page is safe from structural mutations in
@@ -66,9 +65,15 @@ class BPTree {
      * Returns a tuple of two vectors: (path, write_latched_pages)
      * - path: list of node pages starting from root to the searched leaf node.
      * - write_latched_pages: list of pages still latched in write mode
+     *
+     * If txn is not nullptr, will call the transaction concurrency control
+     * algorithm's internal node traversal logic for traversed nodes that are
+     * not latched at return. For nodes that are still latched at return, (one
+     * leaf for read mode or the last few nodes for write mode), their internal
+     * node traversal logic should be appropriately called later by the caller.
      */
     std::tuple<std::vector<Page<K>*>, std::vector<Page<K>*>> TraverseToLeaf(
-        const K& key, LatchMode latch_mode);
+        const K& key, LatchMode latch_mode, TxnCxt<K, V>* txn = nullptr);
 
     /**
      * Split the given page into two siblings, and propagate one new key
@@ -84,6 +89,13 @@ class BPTree {
      */
     void SplitPage(Page<K>* page, std::vector<Page<K>*>& path,
                    const K& trigger_key);
+
+    /**
+     * Iterate through all pages in tree in depth-first post-order manner,
+     * applying given function to each page.
+     */
+    template <typename Func>
+    void DepthFirstIterate(Func func);
 
    public:
     BPTree(size_t degree);
@@ -123,12 +135,12 @@ class BPTree {
                 std::vector<std::tuple<K, V>>& results, TxnCxt<K, V>* txn);
 
     /**
-     * Scan the whole B+-tree and print statistics. If print_pages is true,
-     * also prints content of all pages.
+     * Iterate through the whole B+-tree, gather and verify statistics. If
+     * print_pages is true, also prints content of all pages.
      *
      * This method is only for debugging; it is NOT thread-safe.
      */
-    void PrintStats(bool print_pages = false);
+    BPTreeStats GatherStats(bool print_pages = false);
 };
 
 }  // namespace garner

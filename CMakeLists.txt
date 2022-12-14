@@ -22,23 +22,23 @@ add_subdirectory(bench)
 # Tests:
 enable_testing()
 add_test(
-    NAME TestSingleBPTree
+    NAME Test_Single_BPTree
     COMMAND $<TARGET_FILE:test_single_bptree>)
 add_test(
-    NAME TestConcurBPTree
+    NAME Test_Concur_BPTree
     COMMAND $<TARGET_FILE:test_concur_bptree>)
 add_test(
-    NAME TestSingleTxnRun_Silo
+    NAME Test_Single_TxnRun_Silo
     COMMAND $<TARGET_FILE:test_single_txnrun> -p silo)
 add_test(
-    NAME TestConcurTxnRun_Silo
+    NAME Test_Concur_TxnRun_Silo
     COMMAND $<TARGET_FILE:test_concur_txnrun> -p silo)
 add_test(
-    NAME TestSingleTxnRun_Silo_HV
+    NAME Test_Single_TxnRun_Silo_HV
     COMMAND $<TARGET_FILE:test_single_txnrun> -p silo_hv)
 add_test(
-    NAME TestConcurTxnRun_Silo_HV_Static
+    NAME Test_Concur_TxnRun_Silo_HV_Static
     COMMAND $<TARGET_FILE:test_concur_txnrun> -p silo_hv -s)
 # add_test(
-#     NAME TestConcurTxnRun_Silo_HV
+#     NAME Test_Concur_TxnRun_Silo_HV
 #     COMMAND $<TARGET_FILE:test_concur_txnrun> -p silo_hv)

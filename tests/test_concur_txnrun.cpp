@@ -395,7 +395,8 @@ static void concurrency_test_round(garner::TxnProtocol protocol,
 
     std::atomic<uint64_t> ser_counter{1};
 
-    // gn->PrintStats(true);
+    // garner::BPTreeStats stats = gn->GatherStats(true);
+    // std::cout << stats << std::endl;
 
     std::cout << " Warming up B+-tree with some records..." << std::endl;
     std::random_device rd;
@@ -415,7 +416,8 @@ static void concurrency_test_round(garner::TxnProtocol protocol,
         warmup_map[key] = val;
     }
 
-    // gn->PrintStats(true);
+    // stats = gn->GatherStats(true);
+    // std::cout << stats << std::endl;
 
     // spawn multiple threads, each doing a sufficient number of requests,
     // and recording the list of requests (+ results) on each
@@ -440,7 +442,8 @@ static void concurrency_test_round(garner::TxnProtocol protocol,
     std::cout << " Doing serializability check..." << std::endl;
     serializability_check(gn, &thread_reqs, warmup_map);
 
-    // gn->PrintStats(true);
+    // stats = gn->GatherStats(true);
+    // std::cout << stats << std::endl;
 
     std::cout << " Concurrent transaction tests passed!" << std::endl;
     delete gn;

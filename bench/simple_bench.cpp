@@ -128,7 +128,8 @@ static void simple_benchmark_round(garner::TxnProtocol protocol) {
               << " length=" << ROUND_SECS << "s"
               << " scan=" << SCAN_PERCENTAGE << "%" << std::endl;
 
-    // gn->PrintStats(true);
+    // garner::BPTreeStats stats = gn->GatherStats(true);
+    // std::cout << stats << std::endl;
 
     std::cout << " Warming up B+-tree with " << NUM_OPS_WARMUP << " records..."
               << std::endl;
@@ -149,7 +150,8 @@ static void simple_benchmark_round(garner::TxnProtocol protocol) {
         warmup_keys.push_back(key);
     }
 
-    // gn->PrintStats(true);
+    // stats = gn->GatherStats(true);
+    // std::cout << stats << std::endl;
 
     std::cout << " Running multi-threaded transaction workload..." << std::endl;
     std::vector<size_t> thread_num_txns(NUM_THREADS, 0);
@@ -185,7 +187,8 @@ static void simple_benchmark_round(garner::TxnProtocol protocol) {
     std::cout << "  Throughput: " << std::fixed << std::setw(0)
               << std::setprecision(2) << throughput << " txns/sec" << std::endl;
 
-    // gn->PrintStats(true);
+    // stats = gn->GatherStats(true);
+    // std::cout << stats << std::endl;
 
     std::cout << " Simple benchmarking round finished!" << std::endl;
     delete gn;

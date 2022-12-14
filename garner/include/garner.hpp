@@ -1,5 +1,7 @@
 // Garner -- simple transactional DB interface to an in-memory B+-tree.
 
+#include <atomic>
+#include <iostream>
 #include <string>
 #include <vector>
 
@@ -12,6 +14,18 @@ namespace garner {
 // just passing pointers around through Garner's public interface.
 template <typename K, typename V>
 class TxnCxt;
+
+/** Statistics buffer. */
+struct BPTreeStats {
+    unsigned height;
+    size_t npages;
+    size_t npages_itnl;  // includes root page if it's not the only leaf
+    size_t npages_leaf;
+    size_t nkeys_itnl;
+    size_t nkeys_leaf;
+};
+
+std::ostream& operator<<(std::ostream& s, const BPTreeStats& stats);
 
 /**
  * Transaction concurrency control protocols enum.
@@ -134,12 +148,12 @@ class Garner {
                       TxnCxt<KType, VType>* txn = nullptr) = 0;
 
     /**
-     * Scan the whole B+-tree and print statistics. If print_pages is true,
-     * also prints content of all pages.
+     * Iterate through the whole B+-tree, gather and verify statistics. If
+     * print_pages is true, also prints content of all pages.
      *
      * This method is only for debugging; it is NOT thread-safe.
      */
-    virtual void PrintStats(bool print_pages = false) = 0;
+    virtual BPTreeStats GatherStats(bool print_pages = false) = 0;
 };
 
 }  // namespace garner

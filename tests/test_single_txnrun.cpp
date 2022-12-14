@@ -147,7 +147,8 @@ static void single_test_round(garner::TxnProtocol protocol) {
         }
     };
 
-    // gn->PrintStats(true);
+    // garner::BPTreeStats stats = gn->GatherStats(true);
+    // std::cout << stats << std::endl;
 
     // implicit single-op transactions without calling transaction interface
     size_t num_implicit = NUM_OPS / 10;
@@ -163,7 +164,8 @@ static void single_test_round(garner::TxnProtocol protocol) {
             CheckedScan(req.key, req.rkey, nullptr);
     }
 
-    // gn->PrintStats(true);
+    // stats = gn->GatherStats(true);
+    // std::cout << stats << std::endl;
 
     // explicit transactions
     std::uniform_int_distribution<size_t> rand_txn_ops(1, MAX_OPS_PER_TXN);
@@ -194,7 +196,8 @@ static void single_test_round(garner::TxnProtocol protocol) {
         curr_ops += txn_ops;
     }
 
-    // gn->PrintStats(true);
+    // stats = gn->GatherStats(true);
+    // std::cout << stats << std::endl;
 
     std::cout << " Single-thread transaction tests passed!" << std::endl;
     delete gn;

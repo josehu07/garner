@@ -162,7 +162,8 @@ int main(int argc, char* argv[]) {
     std::cout << "Finished " << cnt << " requests." << std::endl << std::endl;
 
     print_results_latency(microsecs);
-    gn->PrintStats(false);
+    garner::BPTreeStats stats = gn->GatherStats(false);
+    std::cout << stats << std::endl;
 
     delete gn;
     return 0;

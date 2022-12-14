@@ -20,3 +20,6 @@ jobs:
       uses: jidicula/clang-format-action@v4.9.0
       with:
         clang-format-version: '10'
+
+    - name: Run Python Black style check
+      uses: psf/black@stable

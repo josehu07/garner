@@ -21,7 +21,7 @@ bool TxnSiloHV<K, V>::ExecReadRecord(Record<K, V>* record, V& value) {
     // if in my local write set, read from there instead
     if (write_set.contains(record)) {
         assert(write_list[write_set[record]].is_record);
-        value = write_list[write_set[record]].value;
+        value = std::get<V>(write_list[write_set[record]].height_or_value);
     } else
         value = std::move(read_value);
 
@@ -49,10 +49,12 @@ void TxnSiloHV<K, V>::ExecWriteRecord(Record<K, V>* record, V value) {
     // do not actually write; save value locally
     if (write_set.contains(record)) {
         assert(write_list[write_set[record]].is_record);
-        write_list[write_set[record]].value = std::move(value);
+        write_list[write_set[record]].height_or_value = std::move(value);
     } else {
-        write_list.push_back(WriteListItem{
-            .is_record = true, .record = record, .value = std::move(value)});
+        write_list.push_back(
+            WriteListItem{.is_record = true,
+                          .record = record,
+                          .height_or_value = std::move(value)});
         write_set[record] = write_list.size() - 1;
     }
 }
@@ -70,13 +72,13 @@ void TxnSiloHV<K, V>::ExecReadTraverseNode(Page<K>* page) {
 }
 
 template <typename K, typename V>
-void TxnSiloHV<K, V>::ExecWriteTraverseNode(Page<K>* page) {
+void TxnSiloHV<K, V>::ExecWriteTraverseNode(Page<K>* page, unsigned height) {
     // append to write list
     // may miss the page if it was already in the list pushed by a previous
     // operation in the same transaction
     if (!write_set.contains(page)) {
-        write_list.push_back(
-            WriteListItem{.is_record = false, .page = page, .value = V()});
+        write_list.push_back(WriteListItem{
+            .is_record = false, .page = page, .height_or_value = height});
         write_set[page] = write_list.size() - 1;
     }
 }
@@ -87,24 +89,30 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
     if (must_abort) return false;
 
     // phase 1: lock for writes
-    // sort record chunks in memory address order to prevent deadlocks
-    auto witb = write_list.begin(), wite = write_list.begin();
-    while (witb != write_list.end()) {
-        // find the next contiguous chunk of records in list
-        while (witb != write_list.end() && !witb->is_record) ++witb;
-        if (witb == write_list.end()) break;
-        wite = witb;
-        while (wite != write_list.end() && wite->is_record) ++wite;
-        // sort the chunk
-        if (wite - witb > 1) {
-            std::sort(witb, wite,
-                      [](const WriteListItem& wa, const WriteListItem& wb) {
+    // sort records in the following order to prevent deadlocks:
+    // - tree node < record
+    // - if both are tree nodes, larger height < smaller height,
+    //   then compare memory address if same height
+    // - if both are records, compare memory address
+    std::sort(write_list.begin(), write_list.end(),
+              [](const WriteListItem& wa, const WriteListItem& wb) {
+                  if (!wa.is_record && wb.is_record)
+                      return true;
+                  else if (wa.is_record && !wb.is_record)
+                      return false;
+                  else if (wa.is_record && wb.is_record) {
+                      return reinterpret_cast<uint64_t>(wa.record) <
+                             reinterpret_cast<uint64_t>(wb.record);
+                  } else {
+                      if (wa.height_or_value > wb.height_or_value)
+                          return true;
+                      else if (wa.height_or_value < wb.height_or_value)
+                          return false;
+                      else
                           return reinterpret_cast<uint64_t>(wa.record) <
                                  reinterpret_cast<uint64_t>(wb.record);
-                      });
-        }
-        witb = wite;
-    }
+                  }
+              });
 
     for (auto&& witem : write_list) {
         if (witem.is_record) {
@@ -233,7 +241,7 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
     // phase 3: reflect writes with new version number
     for (auto&& witem : write_list) {
         if (witem.is_record) {
-            witem.record->value = std::move(witem.value);
+            witem.record->value = std::move(std::get<V>(witem.height_or_value));
             witem.record->version = new_version;
             witem.record->valid = true;
 

@@ -99,8 +99,8 @@ bool GarnerImpl::Scan(const KType& lkey, const KType& rkey,
         return FinishTxn(this_txn);
 }
 
-void GarnerImpl::PrintStats(bool print_pages) {
-    bptree->PrintStats(print_pages);
+BPTreeStats GarnerImpl::GatherStats(bool print_pages) {
+    return bptree->GatherStats(print_pages);
 }
 
 }  // namespace garner

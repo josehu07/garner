@@ -3,10 +3,13 @@
 #include <syscall.h>
 #include <unistd.h>
 
+#include "include/garner.hpp"
+
 namespace garner {
 
 std::ostream& operator<<(std::ostream& s, const BPTreeStats& stats) {
-    return s << "BPTreeStats{npages=" << stats.npages
+    return s << "BPTreeStats{height=" << stats.height
+             << ",npages=" << stats.npages
              << ",npages_itnl=" << stats.npages_itnl
              << ",npages_leaf=" << stats.npages_leaf
              << ",nkeys_itnl=" << stats.nkeys_itnl
