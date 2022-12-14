@@ -175,7 +175,8 @@ static void concurrency_test_round() {
     std::cout << " Degree=" << TEST_DEGREE << " #threads=" << NUM_THREADS
               << " #ops/thread=" << NUM_OPS_PER_THREAD << std::endl;
 
-    // gn->PrintStats(true);
+    // garner::BPTreeStats stats = gn->GatherStats(true);
+    // std::cout << stats << std::endl;
 
     // spawn multiple threads, each doing a sufficient number of requests,
     // and recording the list of requests (+ results) on each
@@ -191,11 +192,13 @@ static void concurrency_test_round() {
     }
     for (unsigned tidx = 0; tidx < NUM_THREADS; ++tidx) threads[tidx].join();
 
+    gn->GatherStats(false);
+    // stats = gn->GatherStats(true);
+    // std::cout << stats << std::endl;
+
     // run an (incomplete) integrity check against thread results
     std::cout << " Doing basic integrity check..." << std::endl;
     integrity_check(gn, std::move(thread_reqs));
-
-    // gn->PrintStats(true);
 
     std::cout << " Concurrent BPTree tests passed!" << std::endl;
     delete gn;

@@ -50,7 +50,7 @@ class GarnerImpl : public Garner {
               std::vector<std::tuple<KType, VType>>& results, size_t& nrecords,
               TxnCxt<KType, VType>* txn = nullptr) override;
 
-    void PrintStats(bool print_pages = false) override;
+    BPTreeStats GatherStats(bool print_pages = false) override;
 };
 
 }  // namespace garner

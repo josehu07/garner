@@ -93,7 +93,7 @@ Record<K, V>* PageRoot<K, V>::Inject(ssize_t search_idx, K key) {
     assert(search_idx >= -1 &&
            search_idx < static_cast<ssize_t>(this->NumKeys()));
     assert(records.size() == this->NumKeys());
-    assert(height == 1);
+    assert(this->height == 1);
     assert(children.empty());
 
     // if key has exact match with the one on idx, simply return that record
@@ -122,7 +122,7 @@ void PageRoot<K, V>::Inject(ssize_t search_idx, K key, Page<K>* lpage,
     assert(search_idx >= -1 &&
            search_idx < static_cast<ssize_t>(this->NumKeys()));
     assert(children.size() == this->keys.size() + 1);
-    assert(height > 1);
+    assert(this->height > 1);
     assert(records.empty());
 
     // must not have duplicate internal node keys

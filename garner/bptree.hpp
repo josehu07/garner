@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "common.hpp"
+#include "include/garner.hpp"
 #include "page.hpp"
 #include "record.hpp"
 #include "txn.hpp"
@@ -37,10 +38,6 @@ class BPTree {
 
     // pointer to root page, set at initiailization
     PageRoot<K, V>* root = nullptr;
-
-    // set of all pages allocated; this is for simplicity
-    std::unordered_set<Page<K>*> all_pages;
-    std::mutex all_pages_lock;
 
     /**
      * Allocate a new page of specific type.
@@ -85,6 +82,13 @@ class BPTree {
     void SplitPage(Page<K>* page, std::vector<Page<K>*>& path,
                    const K& trigger_key);
 
+    /**
+     * Iterate through all pages in tree in depth-first post-order manner,
+     * applying given function to each page.
+     */
+    template <typename Func>
+    void DepthFirstIterate(Func func);
+
    public:
     BPTree(size_t degree);
     ~BPTree();
@@ -123,12 +127,12 @@ class BPTree {
                 std::vector<std::tuple<K, V>>& results, TxnCxt<K, V>* txn);
 
     /**
-     * Scan the whole B+-tree and print statistics. If print_pages is true,
-     * also prints content of all pages.
+     * Iterate through the whole B+-tree, gather and verify statistics. If
+     * print_pages is true, also prints content of all pages.
      *
      * This method is only for debugging; it is NOT thread-safe.
      */
-    void PrintStats(bool print_pages = false);
+    BPTreeStats GatherStats(bool print_pages = false);
 };
 
 }  // namespace garner

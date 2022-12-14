@@ -24,19 +24,7 @@ class GarnerException : public std::exception {
     const char* what() const noexcept override { return what_msg.c_str(); }
 };
 
-/** Statistics buffer. */
-struct BPTreeStats {
-    size_t npages;
-    size_t npages_itnl;  // includes root page
-    size_t npages_leaf;
-    size_t nkeys_itnl;
-    size_t nkeys_leaf;
-};
-
-std::ostream& operator<<(std::ostream& s, const BPTreeStats& stats);
-
 /** Debug printing utilities. */
-
 // thread ID
 extern thread_local const pid_t tid;
 

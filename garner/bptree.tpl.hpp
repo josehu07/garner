@@ -5,8 +5,7 @@
 namespace garner {
 
 template <typename K, typename V>
-BPTree<K, V>::BPTree(size_t degree)
-    : degree(degree), all_pages(), all_pages_lock() {
+BPTree<K, V>::BPTree(size_t degree) : degree(degree) {
     if (degree < 4) {
         throw GarnerException("degree parameter too small: " +
                               std::to_string(degree));
@@ -18,13 +17,11 @@ BPTree<K, V>::BPTree(size_t degree)
     root = new PageRoot<K, V>(degree);
     if (root == nullptr)
         throw GarnerException("failed to allocate memory for root page");
-    all_pages.insert(root);
 }
 
 template <typename K, typename V>
 BPTree<K, V>::~BPTree() {
-    std::lock_guard<std::mutex> lg(all_pages_lock);
-    for (auto* page : all_pages) {
+    auto iterate_func = [](Page<K>* page) {
         // deallocate all records
         if (page->type == PAGE_LEAF) {
             auto* leaf = reinterpret_cast<PageLeaf<K, V>*>(page);
@@ -37,7 +34,9 @@ BPTree<K, V>::~BPTree() {
 
         // deallocate page
         delete page;
-    }
+    };
+
+    DepthFirstIterate(iterate_func);
 }
 
 template <typename K, typename V>
@@ -45,8 +44,6 @@ PageLeaf<K, V>* BPTree<K, V>::NewPageLeaf() {
     auto* page = new PageLeaf<K, V>(degree);
     if (page == nullptr)
         throw GarnerException("failed to allocate memory for new page");
-    std::lock_guard<std::mutex> lg(all_pages_lock);
-    all_pages.insert(page);
     return page;
 }
 
@@ -55,8 +52,6 @@ PageItnl<K, V>* BPTree<K, V>::NewPageItnl(unsigned height) {
     auto* page = new PageItnl<K, V>(degree, height);
     if (page == nullptr)
         throw GarnerException("failed to allocate memory for new page");
-    std::lock_guard<std::mutex> lg(all_pages_lock);
-    all_pages.insert(page);
     return page;
 }
 
@@ -307,6 +302,59 @@ void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path,
 }
 
 template <typename K, typename V>
+template <typename Func>
+void BPTree<K, V>::DepthFirstIterate(Func func) {
+    // if root is the only leaf
+    if (root->height == 1) {
+        func(root);
+        return;
+    }
+
+    // current traversal stack of (page, curr_child_idx) pairs
+    std::vector<std::pair<Page<K>*, size_t>> stack = {std::make_pair(root, 0)};
+    stack.reserve(root->height);
+    assert(root->children.size() > 0);
+
+    // depth-first post-order walk
+    while (true) {
+        Page<K>* page = stack.back().first;
+
+        if (page->type == PAGE_ITNL) {
+            // is non-root internal node
+            auto* itnl = reinterpret_cast<PageItnl<K, V>*>(page);
+            size_t child_idx = stack.back().second;
+            if (child_idx < itnl->children.size())
+                stack.emplace_back(itnl->children[child_idx], 0);
+            else {
+                func(itnl);
+                stack.pop_back();
+                assert(stack.size() > 0);
+                stack.back().second++;
+            }
+        } else if (page->type == PAGE_ROOT) {
+            // is internal root
+            assert(page == root);
+            size_t child_idx = stack.back().second;
+            if (child_idx < root->children.size())
+                stack.emplace_back(root->children[child_idx], 0);
+            else {
+                func(root);
+                stack.pop_back();
+                assert(stack.size() == 0);
+                break;
+            }
+        } else {
+            // is leaf node
+            auto* leaf = reinterpret_cast<PageLeaf<K, V>*>(page);
+            func(leaf);
+            stack.pop_back();
+            assert(stack.size() > 0);
+            stack.back().second++;
+        }
+    }
+}
+
+template <typename K, typename V>
 void BPTree<K, V>::Put(K key, V value, TxnCxt<K, V>* txn) {
     DEBUG("req Put %s val %s", StreamStr(key).c_str(),
           StreamStr(value).c_str());
@@ -521,43 +569,70 @@ size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
 }
 
 template <typename K, typename V>
-void BPTree<K, V>::PrintStats(bool print_pages) {
-    std::lock_guard<std::mutex> lg(all_pages_lock);
-
+BPTreeStats BPTree<K, V>::GatherStats(bool print_pages) {
     BPTreeStats stats;
-    stats.npages = all_pages.size();
+    stats.height = 0;
+    stats.npages = 0;
     stats.npages_itnl = 0;
     stats.npages_leaf = 0;
     stats.nkeys_itnl = 0;
     stats.nkeys_leaf = 0;
 
-    if (print_pages) std::cout << "Pages:" << std::endl;
+    PageLeaf<K, V>* last_leaf = nullptr;
+    Page<K>* last_page = nullptr;
 
-    // scan through all pages
-    for (auto* page : all_pages) {
-        if (page->type == PAGE_ROOT || page->type == PAGE_ITNL) {
-            stats.npages_itnl++;
-            stats.nkeys_itnl += page->NumKeys();
-        } else if (page->type == PAGE_LEAF) {
-            stats.npages_leaf++;
-            stats.nkeys_leaf += page->NumKeys();
-        } else
-            throw GarnerException("unknown page type encountered");
+    auto iterate_func = [&](Page<K>* page) {
+        if (page->type == PAGE_ROOT) stats.height = page->height;
 
         if (print_pages) {
             printf(" %p ", static_cast<void*>(page));
             if (page->type == PAGE_ROOT) {
-                std::cout << *reinterpret_cast<PageRoot<K, V>*>(page)
+                std::cout << StreamStr(*reinterpret_cast<PageRoot<K, V>*>(page))
                           << std::endl;
             } else if (page->type == PAGE_ITNL) {
-                std::cout << *reinterpret_cast<PageItnl<K, V>*>(page)
+                std::cout << StreamStr(*reinterpret_cast<PageItnl<K, V>*>(page))
                           << std::endl;
             } else {
-                std::cout << *reinterpret_cast<PageLeaf<K, V>*>(page)
+                std::cout << StreamStr(*reinterpret_cast<PageLeaf<K, V>*>(page))
                           << std::endl;
             }
         }
-    }
+
+        if (page->type == PAGE_ROOT || page->type == PAGE_ITNL) {
+            if (last_page != nullptr && page->height != last_page->height + 1) {
+                throw GarnerException("stats: incorrect height " +
+                                      std::to_string(page->height) +
+                                      " of an internal node" + ", expect " +
+                                      std::to_string(last_page->height + 1));
+            }
+
+            stats.npages++;
+            stats.npages_itnl++;
+            stats.nkeys_itnl += page->NumKeys();
+
+        } else if (page->type == PAGE_LEAF) {
+            if (page->height != 1) {
+                throw GarnerException("stats: invalid height " +
+                                      std::to_string(page->height) +
+                                      " of a leaf node");
+            }
+            if (last_leaf != nullptr && last_leaf->next != page)
+                throw GarnerException("stats: incorrect leaf chain pointer");
+            last_leaf = reinterpret_cast<PageLeaf<K, V>*>(page);
+
+            stats.npages++;
+            stats.npages_leaf++;
+            stats.nkeys_leaf += page->NumKeys();
+
+        } else
+            throw GarnerException("unknown page type encountered");
+
+        last_page = page;
+    };
+
+    // scan through all pages
+    if (print_pages) std::cout << "Pages:" << std::endl;
+    DepthFirstIterate(iterate_func);
 
     // if tree only has one page, root is the only leaf
     if (stats.npages == 1) {
@@ -570,8 +645,18 @@ void BPTree<K, V>::PrintStats(bool print_pages) {
         stats.npages_itnl = 0;
     }
 
-    assert(stats.npages == stats.npages_itnl + stats.npages_leaf);
-    std::cout << stats << std::endl;
+    if (stats.height < 1) {
+        throw GarnerException("stats: invalid tree height " +
+                              std::to_string(stats.height));
+    }
+    if (stats.npages != stats.npages_itnl + stats.npages_leaf) {
+        throw GarnerException(
+            "stats: total #pages " + std::to_string(stats.npages) +
+            " does not match #itnl " + std::to_string(stats.npages_itnl) +
+            " + #leaf " + std::to_string(stats.npages_leaf));
+    }
+
+    return stats;
 }
 
 }  // namespace garner

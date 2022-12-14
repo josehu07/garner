@@ -32,13 +32,11 @@ static std::tuple<std::vector<GarnerReq>, size_t> read_input_trace(
             degree = std::stoul(key);
             continue;
         }
-        GarnerOp op = (opcode == "GET")
-                          ? GET
-                          : (opcode == "PUT")
-                                ? PUT
-                                : (opcode == "DELETE")
-                                      ? DELETE
-                                      : (opcode == "SCAN") ? SCAN : UNKNOWN;
+        GarnerOp op = (opcode == "GET")      ? GET
+                      : (opcode == "PUT")    ? PUT
+                      : (opcode == "DELETE") ? DELETE
+                      : (opcode == "SCAN")   ? SCAN
+                                             : UNKNOWN;
         std::string rkey;
         if (op == SCAN) input >> rkey;
         reqs.push_back(GarnerReq(op, key, rkey, ""));
@@ -162,7 +160,8 @@ int main(int argc, char* argv[]) {
     std::cout << "Finished " << cnt << " requests." << std::endl << std::endl;
 
     print_results_latency(microsecs);
-    gn->PrintStats(false);
+    garner::BPTreeStats stats = gn->GatherStats(false);
+    std::cout << stats << std::endl;
 
     delete gn;
     return 0;

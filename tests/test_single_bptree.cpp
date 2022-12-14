@@ -111,7 +111,8 @@ static void fuzz_test_round(bool do_puts) {
         }
     };
 
-    // gn->PrintStats(true);
+    // garner::BPTreeStats stats = gn->GatherStats(true);
+    // std::cout << stats << std::endl;
 
     // putting random records
     if (do_puts) {
@@ -123,7 +124,9 @@ static void fuzz_test_round(bool do_puts) {
         }
     }
 
-    // gn->PrintStats(true);
+    gn->GatherStats(false);
+    // stats = gn->GatherStats(true);
+    // std::cout << stats << std::endl;
 
     // getting keys that should be found
     if (do_puts) {
@@ -156,7 +159,8 @@ static void fuzz_test_round(bool do_puts) {
         }
     }
 
-    // gn->PrintStats(true);
+    // stats = gn->GatherStats(true);
+    // std::cout << stats << std::endl;
 
     // scanning random ranges
     std::cout << " Testing random Scans..." << std::endl;
@@ -169,7 +173,8 @@ static void fuzz_test_round(bool do_puts) {
         CheckedScan(lkey, rkey);
     }
 
-    // gn->PrintStats(true);
+    // stats = gn->GatherStats(true);
+    // std::cout << stats << std::endl;
 
     std::cout << " Single-thread BPTree tests passed!" << std::endl;
     delete gn;
