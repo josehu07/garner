@@ -174,7 +174,7 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
 
     // phase 2
     size_t idx = 0;
-    while (idx < read_list.size()) {
+    while (!no_read_validation && idx < read_list.size()) {
         auto&& ritem = read_list[idx];
 
         if (ritem.is_record) {

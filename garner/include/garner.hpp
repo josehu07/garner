@@ -31,9 +31,10 @@ std::ostream& operator<<(std::ostream& s, const BPTreeStats& stats);
  * Transaction concurrency control protocols enum.
  */
 typedef enum TxnProtocol {
-    PROTOCOL_NONE,    // no concurrency control
-    PROTOCOL_SILO,    // simplified Silo
-    PROTOCOL_SILO_HV  // Silo with hierarchical validation
+    PROTOCOL_NONE,     // no concurrency control
+    PROTOCOL_SILO,     // simplified Silo
+    PROTOCOL_SILO_HV,  // Silo with hierarchical validation
+    PROTOCOL_SILO_NR   // Silo with no read validation as performance roofline
 } TxnProtocol;
 
 /**

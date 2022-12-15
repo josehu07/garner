@@ -90,9 +90,8 @@ Run formatter for all source code files:
 - [x] Transaction manager
 - [x] Basic HV-OCC protocol
 - [x] Deadlock-free write locking in validation
-- [ ] Correct left/right skip bound
-- [ ] Do better than comparing keys in skipping children nodes
-- [ ] Properly support on-the-fly insertions!
+- [x] Subtree crossing & node item skip_to
+- [ ] Proper support for on-the-fly insertions
 - [ ] More comprehensive benchmarking
 - [ ] Try jemalloc/tcmalloc
 - [ ] Better latching to reduce root contention

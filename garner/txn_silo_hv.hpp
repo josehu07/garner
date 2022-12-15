@@ -66,8 +66,11 @@ class TxnSiloHV : public TxnCxt<K, V> {
     // true if abort decision already made during execution
     bool must_abort = false;
 
+    // set true to completely turn off read validation as performance roofline
+    const bool no_read_validation = false;
+
    public:
-    TxnSiloHV()
+    TxnSiloHV(bool no_read_validation = false)
         : TxnCxt<K, V>(),
           read_list(),
           read_set(),
@@ -75,7 +78,8 @@ class TxnSiloHV : public TxnCxt<K, V> {
           in_scan(false),
           write_list(),
           write_set(),
-          must_abort(false) {}
+          must_abort(false),
+          no_read_validation(no_read_validation) {}
 
     TxnSiloHV(const TxnSiloHV&) = delete;
     TxnSiloHV& operator=(const TxnSiloHV&) = delete;
