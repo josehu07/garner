@@ -4,7 +4,7 @@
 [![Build & Tests status](https://github.com/josehu07/garner/actions/workflows/build-n-tests.yml/badge.svg)](https://github.com/josehu07/garner/actions?query=josehu07%3Abuild_n_tests)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-Hierarchical validation in Silo-flavor optimistic concurrency control (OCC) on a B+-tree index.
+Hierarchical validation in Silo-flavor optimistic concurrency control (OCC) on a B+-tree index (in fact, almost a B-link tree index).
 
 <p align="center">
     <img width="360px" src="HV-OCC.png">

@@ -14,13 +14,21 @@ PROG_SIMPLE_BENCH = f"{GARNER_DIR}/build/bench/simple_bench"
 PROTOCOLS = ("silo", "silo_hv")
 
 
-def run_simple_benchmarks(scan_percentages, output_prefix):
+def run_simple_benchmarks(scan_percentages, output_prefix, num_threads):
     print("Running benchmarks matrix...")
+    print(f" #threads: {num_threads}")
     for scan_percentage in sorted(scan_percentages):
         for protocol in PROTOCOLS:
             output_filename = f"{output_prefix}-{protocol}-c{scan_percentage}.log"
             with open(output_filename, "w") as output_file:
-                options = ["-p", protocol, "-c", str(scan_percentage)]
+                options = [
+                    "-p",
+                    protocol,
+                    "-c",
+                    str(scan_percentage),
+                    "-t",
+                    str(num_threads),
+                ]
                 print(f" Running:  scan {scan_percentage:3d}%  {protocol:7s}")
                 subprocess.run(
                     [PROG_SIMPLE_BENCH] + options,
@@ -100,6 +108,7 @@ def plot_results(scan_percentages, results, output_prefix):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-o", "--output_prefix", dest="output_prefix", required=True)
+    parser.add_argument("-t", "--num_threads", dest="num_threads", default=16)
     parser.add_argument(
         "scan_percentages",
         metavar="C",
@@ -109,11 +118,14 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
+    if args.num_threads <= 0:
+        print(f"Error: invalid #threads {args.num_threads}")
+
     for scan_percentage in args.scan_percentages:
         if scan_percentage < 0 or scan_percentage > 100:
             print(f"Error: invalid scan percentage {scan_percentage}")
             exit(1)
 
-    run_simple_benchmarks(args.scan_percentages, args.output_prefix)
+    run_simple_benchmarks(args.scan_percentages, args.output_prefix, args.num_threads)
     results = parse_results(args.scan_percentages, args.output_prefix)
     plot_results(args.scan_percentages, results, args.output_prefix)

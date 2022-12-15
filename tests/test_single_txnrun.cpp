@@ -122,10 +122,6 @@ static void single_test_round(garner::TxnProtocol protocol) {
             refnrecords++;
         }
         if (refnrecords != nrecords) {
-            for (auto&& [key, val] : results)
-                std::cout << " ??? " << key << " " << val << std::endl;
-            for (auto&& [refkey, refval] : refresults)
-                std::cout << " !!! " << refkey << " " << refval << std::endl;
             throw FuzzTestException(
                 "Scan mismatch: lkey=" + lkey + " rkey=" + rkey +
                 " nrecords=" + std::to_string(nrecords) +

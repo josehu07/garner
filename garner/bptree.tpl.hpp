@@ -382,6 +382,7 @@ template <typename K, typename V>
 void BPTree<K, V>::Put(K key, V value, TxnCxt<K, V>* txn) {
     DEBUG("req Put %s val %s", StreamStr(key).c_str(),
           StreamStr(value).c_str());
+    if (txn != nullptr) txn->ExecEnterPut();
 
     // traverse to the correct leaf node and read
     std::vector<Page<K>*> path;
@@ -431,11 +432,14 @@ void BPTree<K, V>::Put(K key, V value, TxnCxt<K, V>* txn) {
         DEBUG("record latch W release %p", static_cast<void*>(record));
     } else
         txn->ExecWriteRecord(record, std::move(value));
+
+    if (txn != nullptr) txn->ExecLeavePut();
 }
 
 template <typename K, typename V>
 bool BPTree<K, V>::Get(const K& key, V& value, TxnCxt<K, V>* txn) {
     DEBUG("req Get %s", StreamStr(key).c_str());
+    if (txn != nullptr) txn->ExecEnterGet();
 
     // traverse to the correct leaf node and read
     std::vector<Page<K>*> path;
@@ -450,6 +454,7 @@ bool BPTree<K, V>::Get(const K& key, V& value, TxnCxt<K, V>* txn) {
         // current concurrency control DOES NOT prevent phantoms
         leaf->latch.unlock_shared();
         DEBUG("page latch R release %p", static_cast<void*>(leaf));
+        if (txn != nullptr) txn->ExecLeaveGet();
         return false;
     }
 
@@ -477,15 +482,20 @@ bool BPTree<K, V>::Get(const K& key, V& value, TxnCxt<K, V>* txn) {
         value = record->value;
         record->latch.unlock_shared();
         DEBUG("record latch R release %p", static_cast<void*>(record));
+        if (txn != nullptr) txn->ExecLeaveGet();
         return true;
-    } else
+    } else {
+        if (txn != nullptr) txn->ExecLeaveGet();
         return txn->ExecReadRecord(record, value);
+    }
 }
 
 template <typename K, typename V>
 bool BPTree<K, V>::Delete([[maybe_unused]] const K& key,
                           [[maybe_unused]] TxnCxt<K, V>* txn) {
+    if (txn != nullptr) txn->ExecEnterDelete();
     // TODO: implement me
+    if (txn != nullptr) txn->ExecLeaveDelete();
     throw GarnerException("Delete not implemented yet!");
 }
 
@@ -495,8 +505,8 @@ size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
                           TxnCxt<K, V>* txn) {
     DEBUG("req Scan %s to %s", StreamStr(lkey).c_str(),
           StreamStr(rkey).c_str());
-
     if (lkey > rkey) return 0;
+    if (txn != nullptr) txn->ExecEnterScan();
 
     // traverse to leaf node for left bound of range
     std::vector<Page<K>*> lpath;
@@ -518,6 +528,7 @@ size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
             assert(leaf->type == PAGE_ROOT);
             leaf->latch.unlock_shared();
             DEBUG("page latch R release %p", static_cast<void*>(leaf));
+            if (txn != nullptr) txn->ExecLeaveScan();
             return 0;
         }
 
@@ -573,6 +584,7 @@ size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
         if (is_rleaf) {
             leaf->latch.unlock_shared();
             DEBUG("page latch R release %p", static_cast<void*>(leaf));
+            if (txn != nullptr) txn->ExecLeaveScan();
             return nrecords;
         }
 
@@ -582,7 +594,43 @@ size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
             if (next == nullptr) {
                 leaf->latch.unlock_shared();
                 DEBUG("page latch R release %p", static_cast<void*>(leaf));
+                if (txn != nullptr) txn->ExecLeaveScan();
                 return nrecords;
+            }
+
+            // call concurrency control algorithm's traversal logic on
+            // internal chained nodes if crossing an internal subtree boundary;
+            // such check is done by utilizing the highkey information
+            //
+            // TODO: this currently assumes no on-the-fly insertions; it is
+            // now also not thread-safe because it reads highkey fields without
+            // read-latching
+            if (txn != nullptr && lpath.size() > 2) {
+                auto* this_leaf = reinterpret_cast<PageLeaf<K, V>*>(leaf);
+                auto* itnl_lo =
+                    reinterpret_cast<PageItnl<K, V>*>(lpath[lpath.size() - 2]);
+                auto* itnl_hi = itnl_lo;
+                bool crossing_subtree =
+                    (this_leaf->highkey.has_value() &&
+                     itnl_lo->highkey.has_value() &&
+                     this_leaf->highkey.value() >= itnl_lo->highkey.value());
+                unsigned crossing_height = 2;
+                while (crossing_subtree) {
+                    lpath[lpath.size() - crossing_height] = itnl_hi->next;
+                    if (++crossing_height >= lpath.size()) break;
+                    itnl_lo = itnl_hi;
+                    itnl_hi = reinterpret_cast<PageItnl<K, V>*>(
+                        lpath[lpath.size() - crossing_height]);
+                    crossing_subtree =
+                        (itnl_hi->highkey.has_value() &&
+                         itnl_lo->highkey.value() >= itnl_hi->highkey.value());
+                }
+
+                if (crossing_height > 2) {
+                    size_t beg_idx = lpath.size() - (crossing_height - 1);
+                    for (size_t idx = beg_idx; idx < lpath.size() - 1; ++idx)
+                        txn->ExecReadTraverseNode(lpath[idx]);
+                }
             }
 
             // latch crabbing in leaf chaining as well
@@ -590,16 +638,16 @@ size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
             DEBUG("page latch R acquire %p", static_cast<void*>(next));
             leaf->latch.unlock_shared();
             DEBUG("page latch R release %p", static_cast<void*>(leaf));
+            lpath.back() = next;
             leaf = next;
 
             // call concurrency control algorithm's traversal logic on
             // pointer-chained leaf
-            if (txn != nullptr) {
-                txn->ExecReadTraverseNode(leaf);
-            }
+            if (txn != nullptr) txn->ExecReadTraverseNode(next);
         } else {
             leaf->latch.unlock_shared();
             DEBUG("page latch R release %p", static_cast<void*>(leaf));
+            if (txn != nullptr) txn->ExecLeaveScan();
             return nrecords;
         }
     }

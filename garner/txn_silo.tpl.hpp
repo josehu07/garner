@@ -24,7 +24,7 @@ bool TxnSilo<K, V>::ExecReadRecord(Record<K, V>* record, V& value) {
     else
         value = std::move(read_value);
 
-    // insert into read set
+    // insert into read set if not in it yet
     if (read_set.contains(record)) {
         if (read_set[record] != read_version) {
             // same record read multiple times by the transaction and versions

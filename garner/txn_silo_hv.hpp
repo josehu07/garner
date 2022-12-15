@@ -32,6 +32,7 @@ class TxnSiloHV : public TxnCxt<K, V> {
             Record<K, V>* record;
         };
         uint64_t version;
+        size_t skip_to;
     };
 
     std::vector<ReadListItem> read_list;
@@ -39,6 +40,11 @@ class TxnSiloHV : public TxnCxt<K, V> {
     // still maintain a map from node/record -> index in read_list, for fast
     // lookups
     std::unordered_map<void*, size_t> read_set;
+
+    // auxiliary map from height -> index of last enqueued node item, used for
+    // setting skip_to information during Scan execution
+    std::unordered_map<unsigned, size_t> last_read_node;
+    bool in_scan = false;
 
     // write list storing node/record -> new value in traversal order
     // first field true means a B+-tree node, else a record
@@ -62,7 +68,14 @@ class TxnSiloHV : public TxnCxt<K, V> {
 
    public:
     TxnSiloHV()
-        : TxnCxt<K, V>(), read_list(), write_list(), must_abort(false) {}
+        : TxnCxt<K, V>(),
+          read_list(),
+          read_set(),
+          last_read_node(),
+          in_scan(false),
+          write_list(),
+          write_set(),
+          must_abort(false) {}
 
     TxnSiloHV(const TxnSiloHV&) = delete;
     TxnSiloHV& operator=(const TxnSiloHV&) = delete;
@@ -90,6 +103,22 @@ class TxnSiloHV : public TxnCxt<K, V> {
      * Save traversal information on page node for write.
      */
     void ExecWriteTraverseNode(Page<K>* page, unsigned height);
+
+    /**
+     * Not used.
+     */
+    void ExecEnterPut() {}
+    void ExecLeavePut() {}
+    void ExecEnterGet() {}
+    void ExecLeaveGet() {}
+    void ExecEnterDelete() {}
+    void ExecLeaveDelete() {}
+
+    /**
+     * Turn on/off subtree crossing logic when entering/leaving a Scan.
+     */
+    void ExecEnterScan();
+    void ExecLeaveScan();
 
     /**
      * Silo hierarchical validation and commit protocol.
