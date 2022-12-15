@@ -25,7 +25,7 @@ bool TxnSiloHV<K, V>::ExecReadRecord(Record<K, V>* record, V& value) {
     } else
         value = std::move(read_value);
 
-    // insert into read set
+    // insert into read set if not in it yet
     if (read_set.contains(record)) {
         assert(read_list[read_set[record]].is_record);
         if (read_list[read_set[record]].version != read_version) {
@@ -36,8 +36,10 @@ bool TxnSiloHV<K, V>::ExecReadRecord(Record<K, V>* record, V& value) {
             must_abort = true;
         }
     } else {
-        read_list.push_back(ReadListItem{
-            .is_record = true, .record = record, .version = read_version});
+        read_list.push_back(ReadListItem{.is_record = true,
+                                         .record = record,
+                                         .version = read_version,
+                                         .skip_to = 0});
         read_set[record] = read_list.size() - 1;
     }
 
@@ -61,26 +63,53 @@ void TxnSiloHV<K, V>::ExecWriteRecord(Record<K, V>* record, V value) {
 
 template <typename K, typename V>
 void TxnSiloHV<K, V>::ExecReadTraverseNode(Page<K>* page) {
-    // append to read list
-    // may miss the page if it was already in the list pushed by a previous
-    // operation in the same transaction
-    if (!read_set.contains(page)) {
-        read_list.push_back(ReadListItem{
-            .is_record = false, .page = page, .version = page->hv_ver});
-        read_set[page] = read_list.size() - 1;
+    // TODO: only doing skipping for Scans for now
+    if (in_scan) {
+        // if there is a node item at the same height, set its skip_to
+        // TODO: reading root page's height may not be thread-safe
+        unsigned height = page->height;
+        if (last_read_node.contains(height)) {
+            read_list[last_read_node[height]].skip_to = read_list.size();
+            last_read_node.erase(height);
+        }
+
+        // append to read list if not already in the list pushed by a previous
+        // operation in the same transaction
+        if (!read_set.contains(page)) {
+            read_list.push_back(ReadListItem{.is_record = false,
+                                             .page = page,
+                                             .version = page->hv_ver,
+                                             .skip_to = 0});
+            read_set[page] = read_list.size() - 1;
+            last_read_node[height] = read_list.size() - 1;
+        }
     }
 }
 
 template <typename K, typename V>
 void TxnSiloHV<K, V>::ExecWriteTraverseNode(Page<K>* page, unsigned height) {
-    // append to write list
-    // may miss the page if it was already in the list pushed by a previous
+    // append to write list if not already in the list pushed by a previous
     // operation in the same transaction
     if (!write_set.contains(page)) {
         write_list.push_back(WriteListItem{
             .is_record = false, .page = page, .height_or_value = height});
         write_set[page] = write_list.size() - 1;
     }
+}
+
+template <typename K, typename V>
+void TxnSiloHV<K, V>::ExecEnterScan() {
+    in_scan = true;
+    assert(last_read_node.empty());
+}
+
+template <typename K, typename V>
+void TxnSiloHV<K, V>::ExecLeaveScan() {
+    in_scan = false;
+    // set dangling node items' skip_to
+    for (auto&& [_, idx] : last_read_node)
+        read_list[idx].skip_to = read_list.size();
+    last_read_node.clear();
 }
 
 template <typename K, typename V>
@@ -144,23 +173,11 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
         *ser_order = (*ser_counter)++;
 
     // phase 2
-    //
-    // TODO: this protocol currently does not work with on-the-fly insertions!
-    // TODO: do better than comparing keys in skipping children nodes.
-    K skip_left_bound, skip_right_bound;
-    bool skipping = false;
+    size_t idx = 0;
+    while (!no_read_validation && idx < read_list.size()) {
+        auto&& ritem = read_list[idx];
 
-    for (auto&& ritem : read_list) {
         if (ritem.is_record) {
-            // if during skipping, check against skip bounds
-            if (skipping) {
-                if (skip_left_bound <= ritem.record->key &&
-                    ritem.record->key <= skip_right_bound)
-                    continue;
-                else
-                    skipping = false;
-            }
-
             // if possibly locked by some writer other than me, abort
             bool latched = false;
             bool me_writing = write_set.contains(ritem.record);
@@ -192,33 +209,30 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
                 return false;
             }
 
-        } else {
-            // if during skipping, check against skip bounds
-            if (skipping) {
-                if (skip_left_bound <= ritem.page->keys.back() &&
-                    ritem.page->keys.back() <= skip_right_bound)
-                    continue;
-                else
-                    skipping = false;
-            }
+            idx++;
 
+        } else {
             // check semaphore field of tree page
             uint64_t hv_sem = ritem.page->hv_sem;
             if (hv_sem > 1 ||
                 (hv_sem == 1 && !write_set.contains(ritem.page))) {
+                idx++;
                 continue;
             }
 
             // check if tree page version changed by any committed writer
-            if (ritem.version != ritem.page->hv_ver) continue;
+            if (ritem.version != ritem.page->hv_ver) {
+                idx++;
+                continue;
+            }
 
             // everything under this subtree have not been modified, skip
             // children nodes
-            if (ritem.page->keys.size() > 0) {
-                skip_left_bound = ritem.page->keys[0];
-                skip_right_bound = ritem.page->keys.back();
-                skipping = true;
-            }
+            if (ritem.skip_to > 0) {
+                assert(ritem.skip_to > idx);
+                idx = ritem.skip_to;
+            } else
+                idx++;
         }
     }
 

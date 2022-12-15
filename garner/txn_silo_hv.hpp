@@ -32,6 +32,7 @@ class TxnSiloHV : public TxnCxt<K, V> {
             Record<K, V>* record;
         };
         uint64_t version;
+        size_t skip_to;
     };
 
     std::vector<ReadListItem> read_list;
@@ -39,6 +40,11 @@ class TxnSiloHV : public TxnCxt<K, V> {
     // still maintain a map from node/record -> index in read_list, for fast
     // lookups
     std::unordered_map<void*, size_t> read_set;
+
+    // auxiliary map from height -> index of last enqueued node item, used for
+    // setting skip_to information during Scan execution
+    std::unordered_map<unsigned, size_t> last_read_node;
+    bool in_scan = false;
 
     // write list storing node/record -> new value in traversal order
     // first field true means a B+-tree node, else a record
@@ -60,9 +66,20 @@ class TxnSiloHV : public TxnCxt<K, V> {
     // true if abort decision already made during execution
     bool must_abort = false;
 
+    // set true to completely turn off read validation as performance roofline
+    const bool no_read_validation = false;
+
    public:
-    TxnSiloHV()
-        : TxnCxt<K, V>(), read_list(), write_list(), must_abort(false) {}
+    TxnSiloHV(bool no_read_validation = false)
+        : TxnCxt<K, V>(),
+          read_list(),
+          read_set(),
+          last_read_node(),
+          in_scan(false),
+          write_list(),
+          write_set(),
+          must_abort(false),
+          no_read_validation(no_read_validation) {}
 
     TxnSiloHV(const TxnSiloHV&) = delete;
     TxnSiloHV& operator=(const TxnSiloHV&) = delete;
@@ -92,6 +109,22 @@ class TxnSiloHV : public TxnCxt<K, V> {
     void ExecWriteTraverseNode(Page<K>* page, unsigned height);
 
     /**
+     * Not used.
+     */
+    void ExecEnterPut() {}
+    void ExecLeavePut() {}
+    void ExecEnterGet() {}
+    void ExecLeaveGet() {}
+    void ExecEnterDelete() {}
+    void ExecLeaveDelete() {}
+
+    /**
+     * Turn on/off subtree crossing logic when entering/leaving a Scan.
+     */
+    void ExecEnterScan();
+    void ExecLeaveScan();
+
+    /**
      * Silo hierarchical validation and commit protocol.
      */
     bool TryCommit(std::atomic<uint64_t>* ser_counter = nullptr,
@@ -119,7 +152,7 @@ std::ostream& operator<<(std::ostream& s,
         s << ",record=" << ritem.record;
     else
         s << ",page=" << ritem.page;
-    s << ",version=" << ritem.version << "}";
+    s << ",version=" << ritem.version << ",skip_to=" << ritem.skip_to << "}";
     return s;
 }
 
@@ -127,11 +160,12 @@ template <typename K, typename V>
 std::ostream& operator<<(std::ostream& s,
                          const typename TxnSiloHV<K, V>::WriteListItem& witem) {
     s << "WLItem{is_record=" << witem.is_record;
-    if (witem.is_record)
+    if (witem.is_record) {
         s << ",record=" << witem.record;
-    else {
+        s << ",value=" << std::get<V>(witem.height_or_value) << "}";
+    } else {
         s << ",page=" << witem.page;
-        s << ",value=" << witem.value << "}";
+        s << ",height=" << std::get<unsigned>(witem.height_or_value) << "}";
     }
     return s;
 }
@@ -142,7 +176,8 @@ std::ostream& operator<<(std::ostream& s, const TxnSiloHV<K, V>& txn) {
     for (auto&& ritem : txn.read_list) s << ritem << ",";
     s << "],write_list=[";
     for (auto&& witem : txn.write_list) s << witem << ",";
-    s << "],must_abort=" << txn.must_abort << "}";
+    s << "],must_abort=" << txn.must_abort
+      << ",no_read_validation=" << txn.no_read_validation << "}";
     return s;
 }
 

@@ -4,7 +4,7 @@
 [![Build & Tests status](https://github.com/josehu07/garner/actions/workflows/build-n-tests.yml/badge.svg)](https://github.com/josehu07/garner/actions?query=josehu07%3Abuild_n_tests)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-Hierarchical validation in Silo-flavor optimistic concurrency control (OCC) on a B+-tree index.
+Hierarchical validation in Silo-flavor optimistic concurrency control (OCC) on a B+-tree index (in fact, almost a B-link tree index).
 
 <p align="center">
     <img width="360px" src="HV-OCC.png">
@@ -61,7 +61,7 @@ Run an individual test for detailed output:
 ./tests/test_<name> -h
 ```
 
-Run a simple benchmarking of transaction throughput:
+Run simple benchmarking of transaction throughput:
 
 ```bash
 ./bench/simple_bench -h
@@ -90,9 +90,8 @@ Run formatter for all source code files:
 - [x] Transaction manager
 - [x] Basic HV-OCC protocol
 - [x] Deadlock-free write locking in validation
-- [ ] Correct left/right skip bound
-- [ ] Do better than comparing keys in skipping children nodes
-- [ ] Properly support on-the-fly insertions!
+- [x] Subtree crossing & node item skip_to
+- [ ] Proper support for on-the-fly insertions
 - [ ] More comprehensive benchmarking
 - [ ] Try jemalloc/tcmalloc
 - [ ] Better latching to reduce root contention

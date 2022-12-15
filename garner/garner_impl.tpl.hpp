@@ -25,6 +25,9 @@ TxnCxt<Garner::KType, Garner::VType>* GarnerImpl::StartTxn() {
         case PROTOCOL_SILO_HV:
             txn = new TxnSiloHV<KType, VType>();
             break;
+        case PROTOCOL_SILO_NR:
+            txn = new TxnSiloHV<KType, VType>(true);
+            break;
         default:
             throw GarnerException("unknown transaction protocol type");
     }

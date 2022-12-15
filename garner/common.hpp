@@ -4,6 +4,7 @@
 #include <unistd.h>
 
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -34,6 +35,17 @@ static inline std::string StreamStr(const T& item) {
     std::ostringstream ss;
     ss << item;
     return std::move(ss.str());
+}
+
+template <typename T>
+static inline std::string OptionStr(const std::optional<T>& option) {
+    if (!option.has_value())
+        return "(null)";
+    else {
+        std::ostringstream ss;
+        ss << option.value();
+        return std::move(ss.str());
+    }
 }
 
 // `DEBUG()` and `assert()` are not active if NDEBUG is defined at

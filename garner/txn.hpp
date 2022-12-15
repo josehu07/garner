@@ -31,6 +31,14 @@ class TxnCxt {
     virtual void ExecWriteRecord(Record<K, V>* record, V value) = 0;
     virtual void ExecReadTraverseNode(Page<K>* page) = 0;
     virtual void ExecWriteTraverseNode(Page<K>* page, unsigned height) = 0;
+    virtual void ExecEnterPut() = 0;
+    virtual void ExecLeavePut() = 0;
+    virtual void ExecEnterGet() = 0;
+    virtual void ExecLeaveGet() = 0;
+    virtual void ExecEnterDelete() = 0;
+    virtual void ExecLeaveDelete() = 0;
+    virtual void ExecEnterScan() = 0;
+    virtual void ExecLeaveScan() = 0;
 
     /**
      * Validate upon transaction commit. If can commit, reflect its effect to

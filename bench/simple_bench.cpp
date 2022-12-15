@@ -20,18 +20,18 @@
 #include "garner.hpp"
 #include "utils.hpp"
 
-static constexpr size_t TEST_DEGREE = 128;
-static constexpr size_t NUM_OPS_WARMUP = 10000;
+static constexpr unsigned NUM_ROUNDS = 3;
+static constexpr uint64_t ROUND_SECS = 5;
+
 static constexpr size_t KEY_LEN = 10;
 static constexpr size_t VAL_LEN = 40;
 
-static unsigned NUM_THREADS = 8;
+static size_t TEST_DEGREE = 256;
+static unsigned NUM_THREADS = 16;
+static size_t NUM_OPS_WARMUP = 50000;
 static size_t MAX_OPS_PER_TXN = 10;
 static unsigned SCAN_PERCENTAGE = 25;
 // TODO: control scan range key space
-
-static unsigned NUM_ROUNDS = 3;
-static uint64_t ROUND_SECS = 5;
 
 static void client_thread_func(std::stop_token stop_token,
                                [[maybe_unused]] unsigned tidx,
@@ -201,21 +201,21 @@ int main(int argc, char* argv[]) {
     cxxopts::Options cmd_args(argv[0]);
     cmd_args.add_options()("h,help", "print help message",
                            cxxopts::value<bool>(help)->default_value("false"))(
-        "r,rounds", "number of rounds",
-        cxxopts::value<unsigned>(NUM_ROUNDS)->default_value("3"))(
-        "s,secs", "number of seconds per round",
-        cxxopts::value<uint64_t>(ROUND_SECS)->default_value("5"))(
+        "d,degree", "B+-tree degree",
+        cxxopts::value<size_t>(TEST_DEGREE)->default_value("256"))(
+        "w,warmup_ops", "number of warmup ops",
+        cxxopts::value<size_t>(NUM_OPS_WARMUP)->default_value("50000"))(
         "p,protocol", "concurency control protocol",
         cxxopts::value<std::string>(protocol_str)->default_value("silo"))(
         "t,threads", "number of threads",
-        cxxopts::value<unsigned>(NUM_THREADS)->default_value("8"))(
+        cxxopts::value<unsigned>(NUM_THREADS)->default_value("16"))(
         "m,max_ops_txn", "max number of ops per transaction",
         cxxopts::value<size_t>(MAX_OPS_PER_TXN)->default_value("10"))(
         "c,scan_percent", "percentage of scan operations",
         cxxopts::value<unsigned>(SCAN_PERCENTAGE)->default_value("25"));
     auto result = cmd_args.parse(argc, argv);
 
-    std::set<std::string> valid_protocols{"none", "silo", "silo_hv"};
+    std::set<std::string> valid_protocols{"none", "silo", "silo_hv", "silo_nr"};
 
     if (help) {
         printf("%s", cmd_args.help().c_str());
@@ -232,6 +232,8 @@ int main(int argc, char* argv[]) {
         protocol = garner::PROTOCOL_SILO;
     else if (protocol_str == "silo_hv")
         protocol = garner::PROTOCOL_SILO_HV;
+    else if (protocol_str == "silo_nr")
+        protocol = garner::PROTOCOL_SILO_NR;
     else {
         std::cerr << "Error: unrecognized concurrency control protocol: "
                   << protocol_str << std::endl;
