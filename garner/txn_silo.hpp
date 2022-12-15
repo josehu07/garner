@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <atomic>
 #include <iostream>
-#include <unordered_map>
+#include <map>
 #include <vector>
 
 #include "common.hpp"
@@ -22,10 +22,10 @@ template <typename K, typename V>
 class TxnSilo : public TxnCxt<K, V> {
    private:
     // read set storing record -> read version
-    std::unordered_map<Record<K, V>*, uint64_t> read_set;
+    std::map<Record<K, V>*, uint64_t> read_set;
 
     // write set storing record -> new value
-    std::unordered_map<Record<K, V>*, V> write_set;
+    std::map<Record<K, V>*, V> write_set;
 
     // true if abort decision already made during execution
     bool must_abort = false;

@@ -152,7 +152,7 @@ std::ostream& operator<<(std::ostream& s,
         s << ",record=" << ritem.record;
     else
         s << ",page=" << ritem.page;
-    s << ",version=" << ritem.version << "}";
+    s << ",version=" << ritem.version << ",skip_to=" << ritem.skip_to << "}";
     return s;
 }
 
@@ -160,11 +160,12 @@ template <typename K, typename V>
 std::ostream& operator<<(std::ostream& s,
                          const typename TxnSiloHV<K, V>::WriteListItem& witem) {
     s << "WLItem{is_record=" << witem.is_record;
-    if (witem.is_record)
+    if (witem.is_record) {
         s << ",record=" << witem.record;
-    else {
+        s << ",value=" << std::get<V>(witem.height_or_value) << "}";
+    } else {
         s << ",page=" << witem.page;
-        s << ",value=" << witem.value << "}";
+        s << ",height=" << std::get<unsigned>(witem.height_or_value) << "}";
     }
     return s;
 }
@@ -175,7 +176,8 @@ std::ostream& operator<<(std::ostream& s, const TxnSiloHV<K, V>& txn) {
     for (auto&& ritem : txn.read_list) s << ritem << ",";
     s << "],write_list=[";
     for (auto&& witem : txn.write_list) s << witem << ",";
-    s << "],must_abort=" << txn.must_abort << "}";
+    s << "],must_abort=" << txn.must_abort
+      << ",no_read_validation=" << txn.no_read_validation << "}";
     return s;
 }
 

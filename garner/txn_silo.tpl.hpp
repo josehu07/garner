@@ -51,22 +51,15 @@ bool TxnSilo<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
     if (must_abort) return false;
 
     // phase 1: lock for writes
-    // sort in memory address order to prevent deadlocks
-    std::vector<Record<K, V>*> write_vec;
-    write_vec.reserve(write_set.size());
-
-    for (auto&& [record, _] : write_set) write_vec.push_back(record);
-    std::sort(write_vec.begin(), write_vec.end(), [](void* ra, void* rb) {
-        return reinterpret_cast<uint64_t>(ra) < reinterpret_cast<uint64_t>(rb);
-    });
-
-    for (auto* record : write_vec) {
+    // lock in memory address order to prevent deadlocks
+    // std::map is already sorted by key
+    for (auto&& [record, _] : write_set) {
         record->latch.lock();
         DEBUG("record latch W acquire %p", static_cast<void*>(record));
     }
 
     auto release_all_write_latches = [&]() {
-        for (auto* record : write_vec) {
+        for (auto&& [record, _] : write_set) {
             record->latch.unlock();
             DEBUG("record latch W release %p", static_cast<void*>(record));
         }
@@ -118,8 +111,8 @@ bool TxnSilo<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
     new_version++;
 
     // phase 3: reflect writes with new version number
-    for (auto* record : write_vec) {
-        record->value = std::move(write_set[record]);
+    for (auto&& [record, value] : write_set) {
+        record->value = std::move(value);
         record->version = new_version;
         record->valid = true;
 

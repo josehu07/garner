@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 GARNER_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 PROG_SIMPLE_BENCH = f"{GARNER_DIR}/build/bench/simple_bench"
 
-PROTOCOLS = ("silo", "silo_hv")
+PROTOCOLS = ("silo", "silo_hv", "silo_nr")
 
 
 def run_simple_benchmarks(scan_percentages, output_prefix, num_threads):
@@ -28,6 +28,11 @@ def run_simple_benchmarks(scan_percentages, output_prefix, num_threads):
                     str(scan_percentage),
                     "-t",
                     str(num_threads),
+                    # DEBUG
+                    "-d",
+                    str(64),
+                    "-w",
+                    str(10000)
                 ]
                 print(f" Running:  scan {scan_percentage:3d}%  {protocol:7s}")
                 subprocess.run(
@@ -78,12 +83,12 @@ def parse_results(scan_percentages, output_prefix):
 
 
 def plot_results(scan_percentages, results, output_prefix):
-    protocol_marker = {"silo": "o", "silo_hv": "v"}
-    protocol_color = {"silo": "steelblue", "silo_hv": "orange"}
+    protocol_marker = {"silo": "o", "silo_hv": "v", "silo_nr": "x"}
+    protocol_color = {"silo": "steelblue", "silo_hv": "orange", "silo_nr": "red"}
 
     plt.rcParams.update({"font.size": 18})
 
-    for protocol in PROTOCOLS:
+    for protocol in reversed(PROTOCOLS):
         xs = scan_percentages
         ys = results[protocol]
         assert len(xs) == len(ys)
