@@ -61,7 +61,7 @@ Run an individual test for detailed output:
 ./tests/test_<name> -h
 ```
 
-Run a simple benchmarking of transaction throughput:
+Run simple benchmarking of transaction throughput:
 
 ```bash
 ./bench/simple_bench -h

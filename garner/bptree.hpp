@@ -62,15 +62,15 @@ class BPTree {
      * After return, proper latches will stay held according to latch mode. It
      * is the caller's job to unlock them later.
      *
-     * Returns a tuple of two vectors: (path, write_latched_pages)
-     * - path: list of node pages starting from root to the searched leaf node.
-     * - write_latched_pages: list of pages still latched in write mode
-     *
      * If txn is not nullptr, will call the transaction concurrency control
      * algorithm's internal node traversal logic for traversed nodes that are
      * not latched at return. For nodes that are still latched at return, (one
      * leaf for read mode or the last few nodes for write mode), their internal
      * node traversal logic should be appropriately called later by the caller.
+     *
+     * Returns a tuple of two vectors: (path, write_latched_pages)
+     * - path: list of node pages starting from root to the searched leaf node.
+     * - write_latched_pages: list of pages still latched in write mode
      */
     std::tuple<std::vector<Page<K>*>, std::vector<Page<K>*>> TraverseToLeaf(
         const K& key, LatchMode latch_mode, TxnCxt<K, V>* txn = nullptr);

@@ -172,9 +172,6 @@ void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path,
             std::copy(spage->records.begin(), spage->records.begin() + mpos,
                       std::back_inserter(lpage->records));
 
-            // set left child's next pointer
-            lpage->next = rpage;
-
             // populate right child
             std::copy(spage->keys.begin() + mpos, spage->keys.end(),
                       std::back_inserter(rpage->keys));
@@ -186,6 +183,10 @@ void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path,
             spage->keys.clear();
             spage->records.clear();
             spage->keys.push_back(mkey);
+
+            // set left child's next pointer and highkey
+            lpage->next = rpage;
+            lpage->highkey = std::make_optional(mkey);
 
         } else {
             // splitting root into two new internal nodes
@@ -203,9 +204,6 @@ void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path,
                       spage->children.begin() + mpos + 1,
                       std::back_inserter(lpage->children));
 
-            // set left child's next pointer
-            lpage->next = rpage;
-
             // populate right child
             std::copy(spage->keys.begin() + mpos + 1, spage->keys.end(),
                       std::back_inserter(rpage->keys));
@@ -217,6 +215,10 @@ void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path,
             spage->keys.clear();
             spage->children.clear();
             spage->keys.push_back(mkey);
+
+            // set left child's next pointer and highkey
+            lpage->next = rpage;
+            lpage->highkey = std::make_optional(mkey);
         }
 
         // set new root child pointers, increment tree height
@@ -255,6 +257,7 @@ void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path,
 
             // set right child's next pointer
             rpage->next = spage->next;
+            rpage->highkey = spage->highkey;
 
             // trim current node
             mkey = rpage->keys[0];
@@ -262,8 +265,9 @@ void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path,
             spage->records.erase(spage->records.begin() + mpos,
                                  spage->records.end());
 
-            // make current node's next link to new right node
+            // make current node's next link to new right node, set highkey
             spage->next = rpage;
+            spage->highkey = std::make_optional(mkey);
 
         } else if (page->type == PAGE_ITNL) {
             // if splitting a non-root internal node
@@ -279,8 +283,9 @@ void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path,
             std::copy(spage->children.begin() + mpos + 1, spage->children.end(),
                       std::back_inserter(rpage->children));
 
-            // set right child's next pointer
+            // set right child's next pointer and highkey
             rpage->next = spage->next;
+            rpage->highkey = spage->highkey;
 
             // trim current node
             mkey = spage->keys[mpos];
@@ -288,8 +293,9 @@ void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path,
             spage->children.erase(spage->children.begin() + mpos + 1,
                                   spage->children.end());
 
-            // make current node's next link to new right node
+            // make current node's next link to new right node, set highkey
             spage->next = rpage;
+            spage->highkey = std::make_optional(mkey);
         } else
             throw GarnerException("unknown page type encountered");
 
@@ -433,7 +439,7 @@ bool BPTree<K, V>::Get(const K& key, V& value, TxnCxt<K, V>* txn) {
 
     // traverse to the correct leaf node and read
     std::vector<Page<K>*> path;
-    std::tie(path, std::ignore) = TraverseToLeaf(key, LATCH_READ);
+    std::tie(path, std::ignore) = TraverseToLeaf(key, LATCH_READ, txn);
     assert(path.size() > 0);
     Page<K>* leaf = path.back();
 
@@ -494,7 +500,7 @@ size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
 
     // traverse to leaf node for left bound of range
     std::vector<Page<K>*> lpath;
-    std::tie(lpath, std::ignore) = TraverseToLeaf(lkey, LATCH_READ);
+    std::tie(lpath, std::ignore) = TraverseToLeaf(lkey, LATCH_READ, txn);
     assert(lpath.size() > 0);
     Page<K>* lleaf = lpath.back();
 
@@ -515,8 +521,8 @@ size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
             return 0;
         }
 
-        // do a search if in left bound leaf page
-        size_t lidx = 0;
+        // do a search if in left or right bound leaf page
+        ssize_t lidx = 0, ridx = leaf->NumKeys() - 1;
         if (leaf == lleaf) {
             ssize_t idx = leaf->SearchKey(lkey);
             if (idx >= 0 && leaf->keys[idx] == lkey)
@@ -526,16 +532,15 @@ size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
             else
                 lidx = idx + 1;
         }
+        assert(lidx >= 0);
+        bool is_rleaf =
+            (leaf->type == PAGE_ROOT ||
+             !reinterpret_cast<PageLeaf<K, V>*>(leaf)->highkey.has_value() ||
+             rkey < reinterpret_cast<PageLeaf<K, V>*>(leaf)->highkey.value());
+        if (is_rleaf) ridx = leaf->SearchKey(rkey);
 
-        // gather records within range; watch out for right bound
-        for (size_t idx = lidx; idx < leaf->NumKeys(); ++idx) {
-            K key = leaf->keys[idx];
-            if (key > rkey) {
-                leaf->latch.unlock_shared();
-                DEBUG("page latch R release %p", static_cast<void*>(leaf));
-                return nrecords;
-            }
-
+        // gather records within range on this page
+        for (ssize_t idx = lidx; idx <= ridx; ++idx) {
             Record<K, V>* record;
             if (leaf->type == PAGE_ROOT)
                 record = reinterpret_cast<PageRoot<K, V>*>(leaf)->records[idx];
@@ -559,9 +564,16 @@ size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
 
             if (valid) {
                 results.push_back(
-                    std::make_tuple(std::move(key), std::move(value)));
+                    std::make_tuple(leaf->keys[idx], std::move(value)));
                 nrecords++;
             }
+        }
+
+        // right bound reached, return
+        if (is_rleaf) {
+            leaf->latch.unlock_shared();
+            DEBUG("page latch R release %p", static_cast<void*>(leaf));
+            return nrecords;
         }
 
         // move on to the right sibling
@@ -574,8 +586,6 @@ size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
             }
 
             // latch crabbing in leaf chaining as well
-            // TODO: this blocking acquisition may no longer to deadlock-free
-            // once there are deletions
             next->latch.lock_shared();
             DEBUG("page latch R acquire %p", static_cast<void*>(next));
             leaf->latch.unlock_shared();
@@ -584,7 +594,9 @@ size_t BPTree<K, V>::Scan(const K& lkey, const K& rkey,
 
             // call concurrency control algorithm's traversal logic on
             // pointer-chained leaf
-            if (txn != nullptr) txn->ExecReadTraverseNode(leaf);
+            if (txn != nullptr) {
+                txn->ExecReadTraverseNode(leaf);
+            }
         } else {
             leaf->latch.unlock_shared();
             DEBUG("page latch R release %p", static_cast<void*>(leaf));
@@ -605,6 +617,7 @@ BPTreeStats BPTree<K, V>::GatherStats(bool print_pages) {
 
     std::map<unsigned, Page<K>*> last_page_at_height;
     std::set<unsigned> height_completed;
+    std::map<unsigned, std::vector<K>> highkey_checklist;
     Page<K>* last_page = nullptr;
 
     auto iterate_func = [&](Page<K>* page) {
@@ -624,6 +637,7 @@ BPTreeStats BPTree<K, V>::GatherStats(bool print_pages) {
             }
         }
 
+        // do tree data integrity checks along the way
         if (page->type == PAGE_ROOT || page->type == PAGE_ITNL) {
             if (last_page != nullptr && page->height != last_page->height + 1) {
                 throw GarnerException("stats: incorrect height " +
@@ -631,6 +645,7 @@ BPTreeStats BPTree<K, V>::GatherStats(bool print_pages) {
                                       " of an internal node" + ", expect " +
                                       std::to_string(last_page->height + 1));
             }
+
             if (last_page_at_height.contains(page->height) &&
                 reinterpret_cast<PageItnl<K, V>*>(
                     last_page_at_height[page->height])
@@ -639,6 +654,40 @@ BPTreeStats BPTree<K, V>::GatherStats(bool print_pages) {
                     "stats: incorrect internal chain pointer");
             }
             last_page_at_height[page->height] = page;
+
+            if (last_page != nullptr) {
+                assert(highkey_checklist.contains(last_page->height));
+                assert(page->keys.size() <=
+                       highkey_checklist[last_page->height].size());
+                for (size_t idx = 0; idx < page->keys.size(); ++idx) {
+                    if (page->keys[idx] !=
+                        highkey_checklist[last_page->height][idx]) {
+                        throw GarnerException(
+                            "stats: highkey of a child node does not match key "
+                            "in parent array");
+                    }
+                }
+            }
+            if (page->type == PAGE_ITNL &&
+                reinterpret_cast<PageItnl<K, V>*>(page)->highkey.has_value()) {
+                assert(page->keys.size() + 1 ==
+                       highkey_checklist[last_page->height].size());
+                K highkey =
+                    reinterpret_cast<PageItnl<K, V>*>(page)->highkey.value();
+                if (highkey != highkey_checklist[last_page->height].back()) {
+                    throw GarnerException(
+                        "stats: highkey of a right-most child node does not "
+                        "match highkey of parent");
+                }
+                if (!highkey_checklist.contains(page->height))
+                    highkey_checklist[page->height] = {std::move(highkey)};
+                else
+                    highkey_checklist[page->height].push_back(
+                        std::move(highkey));
+            }
+            if (last_page != nullptr)
+                highkey_checklist[last_page->height].clear();
+
             if (height_completed.contains(page->height)) {
                 throw GarnerException("stats: an intenral node at height " +
                                       std::to_string(page->height) +
@@ -660,12 +709,24 @@ BPTreeStats BPTree<K, V>::GatherStats(bool print_pages) {
                                       std::to_string(page->height) +
                                       " of a leaf node");
             }
+
             if (last_page_at_height.contains(1) &&
                 reinterpret_cast<PageLeaf<K, V>*>(last_page_at_height[1])
                         ->next != page) {
                 throw GarnerException("stats: incorrect leaf chain pointer");
             }
             last_page_at_height[1] = page;
+
+            assert(highkey_checklist.contains(1));
+            if (reinterpret_cast<PageLeaf<K, V>*>(page)->highkey.has_value()) {
+                K highkey =
+                    reinterpret_cast<PageLeaf<K, V>*>(page)->highkey.value();
+                if (!highkey_checklist.contains(1))
+                    highkey_checklist[1] = {std::move(highkey)};
+                else
+                    highkey_checklist[1].push_back(std::move(highkey));
+            }
+
             if (height_completed.contains(1)) {
                 throw GarnerException(
                     "stats: a leaf node has null next pointer but is not the "
@@ -689,6 +750,15 @@ BPTreeStats BPTree<K, V>::GatherStats(bool print_pages) {
     if (print_pages) std::cout << "Pages:" << std::endl;
     DepthFirstIterate(iterate_func);
 
+    // if did find a node with nullptr next field in some level
+    if (height_completed.size() != stats.height - 1) {
+        assert(height_completed.size() < stats.height - 1);
+        throw GarnerException(
+            "stats: did not find a node with nullptr next field in " +
+            std::to_string(stats.height - 1 - height_completed.size()) +
+            " levels");
+    }
+
     // if tree only has one page, root is the only leaf
     if (stats.npages == 1) {
         assert(stats.npages_itnl == 1);
@@ -704,6 +774,7 @@ BPTreeStats BPTree<K, V>::GatherStats(bool print_pages) {
         throw GarnerException("stats: invalid tree height " +
                               std::to_string(stats.height));
     }
+
     if (stats.npages != stats.npages_itnl + stats.npages_leaf) {
         throw GarnerException(
             "stats: total #pages " + std::to_string(stats.npages) +

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <atomic>
 #include <iostream>
+#include <optional>
 #include <shared_mutex>
 #include <vector>
 
@@ -118,12 +119,20 @@ struct PageLeaf : public Page<K> {
     // pointer to right sibling
     PageLeaf<K, V>* next = nullptr;
 
+    // high key > all keys within the subtree rooted at this node
+    // high key == the key in parent node that is right after the child
+    // pointer to me (or the highkey of parent if I'm the right-most child)
+    std::optional<K> highkey;
+
     // records according to sorted keys, keys[0] -> records[0], etc.
     std::vector<Record<K, V>*> records;
 
     PageLeaf() = delete;
     PageLeaf(size_t degree)
-        : Page<K>(PAGE_LEAF, degree, 1), next(nullptr), records() {
+        : Page<K>(PAGE_LEAF, degree, 1),
+          next(nullptr),
+          highkey(std::nullopt),
+          records() {
         records.reserve(degree);
     }
 
@@ -147,12 +156,13 @@ struct PageLeaf : public Page<K> {
 template <typename K, typename V>
 std::ostream& operator<<(std::ostream& s, const PageLeaf<K, V>& page) {
     s << "Page{type=" << PageTypeStr(page.type) << ",height=" << page.height
+      << ",next=" << page.next << ",highkey=" << OptionStr(page.highkey)
       << ",nkeys=" << page.keys.size();
     s << ",keys=[";
     for (auto&& k : page.keys) s << k << ",";
     s << "],records=[";
     for (auto* v : page.records) s << *v << ",";
-    s << "],next=" << page.next << "}";
+    s << "]}";
     return s;
 }
 
@@ -164,6 +174,11 @@ struct PageItnl : public Page<K> {
     // pointer to right sibling
     PageItnl<K, V>* next = nullptr;
 
+    // high key > all keys within the subtree rooted at this node
+    // high key == the key in parent node that is right after the child
+    // pointer to me (or the highkey of parent if I'm the right-most child)
+    std::optional<K> highkey;
+
     // pointers to child pages
     // children[0] is the one < keys[0];
     // children[1] is the one >= keys[0] and < keys[1], etc.
@@ -171,7 +186,10 @@ struct PageItnl : public Page<K> {
 
     PageItnl() = delete;
     PageItnl(size_t degree, unsigned height)
-        : Page<K>(PAGE_ITNL, degree, height), next(nullptr), children() {
+        : Page<K>(PAGE_ITNL, degree, height),
+          next(nullptr),
+          highkey(std::nullopt),
+          children() {
         children.reserve(degree + 1);
     }
 
@@ -193,6 +211,7 @@ struct PageItnl : public Page<K> {
 template <typename K, typename V>
 std::ostream& operator<<(std::ostream& s, const PageItnl<K, V>& page) {
     s << "Page{type=" << PageTypeStr(page.type) << ",height=" << page.height
+      << ",next=" << page.next << ",highkey=" << OptionStr(page.highkey)
       << ",nkeys=" << page.keys.size();
     s << ",keys=[";
     for (auto&& k : page.keys) s << k << ",";
