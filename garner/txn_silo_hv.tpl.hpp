@@ -67,8 +67,11 @@ void TxnSiloHV<K, V>::ExecReadTraverseNode(Page<K>* page) {
     if (in_scan) {
         // if there is a node item at the same height, set its skip_to
         // TODO: reading root page's height may not be thread-safe
-        if (last_read_node.contains(page->height))
-            read_list[last_read_node[page->height]].skip_to = read_list.size();
+        unsigned height = page->height;
+        if (last_read_node.contains(height)) {
+            read_list[last_read_node[height]].skip_to = read_list.size();
+            last_read_node.erase(height);
+        }
 
         // append to read list if not already in the list pushed by a previous
         // operation in the same transaction
@@ -78,7 +81,7 @@ void TxnSiloHV<K, V>::ExecReadTraverseNode(Page<K>* page) {
                                              .version = page->hv_ver,
                                              .skip_to = 0});
             read_set[page] = read_list.size() - 1;
-            last_read_node[page->height] = read_list.size() - 1;
+            last_read_node[height] = read_list.size() - 1;
         }
     }
 }
