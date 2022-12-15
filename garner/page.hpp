@@ -103,7 +103,7 @@ struct Page {
 template <typename K>
 std::ostream& operator<<(std::ostream& s, const Page<K>& page) {
     s << "Page{type=" << PageTypeStr(page.type) << ",height=" << page.height
-      << ",nkeys=" << page.keys.size();
+        << ",nkeys=" << page.keys.size();
     s << ",keys=[";
     for (auto&& k : page.keys) s << k << ",";
     s << "]}";
@@ -114,7 +114,10 @@ std::ostream& operator<<(std::ostream& s, const Page<K>& page) {
  * Page type -- leaf.
  */
 template <typename K, typename V>
-struct PageLeaf : public Page<K> {
+struct PageLeaf: public Page<K> {
+    // true if the this node is the first child of the parent node
+    bool is_first_child = false;
+
     // pointer to right sibling
     PageLeaf<K, V>* next = nullptr;
 
@@ -123,7 +126,7 @@ struct PageLeaf : public Page<K> {
 
     PageLeaf() = delete;
     PageLeaf(size_t degree)
-        : Page<K>(PAGE_LEAF, degree, 1), next(nullptr), records() {
+        : Page<K>(PAGE_LEAF, degree, 1), is_first_child(false), next(nullptr), records() {
         records.reserve(degree);
     }
 
@@ -147,7 +150,7 @@ struct PageLeaf : public Page<K> {
 template <typename K, typename V>
 std::ostream& operator<<(std::ostream& s, const PageLeaf<K, V>& page) {
     s << "Page{type=" << PageTypeStr(page.type) << ",height=" << page.height
-      << ",nkeys=" << page.keys.size();
+        << ",nkeys=" << page.keys.size() << ",is_first_child=" << page.is_first_child;
     s << ",keys=[";
     for (auto&& k : page.keys) s << k << ",";
     s << "],records=[";
@@ -160,7 +163,10 @@ std::ostream& operator<<(std::ostream& s, const PageLeaf<K, V>& page) {
  * Page type -- internal.
  */
 template <typename K, typename V>
-struct PageItnl : public Page<K> {
+struct PageItnl: public Page<K> {
+    // true if the this node is the first child of the parent node
+    bool is_first_child = false;
+
     // pointer to right sibling
     PageItnl<K, V>* next = nullptr;
 
@@ -171,7 +177,7 @@ struct PageItnl : public Page<K> {
 
     PageItnl() = delete;
     PageItnl(size_t degree, unsigned height)
-        : Page<K>(PAGE_ITNL, degree, height), next(nullptr), children() {
+        : Page<K>(PAGE_ITNL, degree, height), is_first_child(false), next(nullptr), children() {
         children.reserve(degree + 1);
     }
 
@@ -181,7 +187,7 @@ struct PageItnl : public Page<K> {
     ~PageItnl() = default;
 
     /**
-     * Insert a key into non-empty internal node (carrying its left and right
+     * Insert a key into non-full internal node (carrying its left and right
      * child page pointers), shifting array content if necessary. search_idx
      * should be calculated through PageSearchKey.
      *
@@ -193,7 +199,7 @@ struct PageItnl : public Page<K> {
 template <typename K, typename V>
 std::ostream& operator<<(std::ostream& s, const PageItnl<K, V>& page) {
     s << "Page{type=" << PageTypeStr(page.type) << ",height=" << page.height
-      << ",nkeys=" << page.keys.size();
+        << ",nkeys=" << page.keys.size() << ",is_first_child=" << page.is_first_child;
     s << ",keys=[";
     for (auto&& k : page.keys) s << k << ",";
     s << "],children=[";
@@ -206,7 +212,7 @@ std::ostream& operator<<(std::ostream& s, const PageItnl<K, V>& page) {
  * Page type -- root.
  */
 template <typename K, typename V>
-struct PageRoot : public Page<K> {
+struct PageRoot: public Page<K> {
     // page content sorted according to key
     std::vector<Record<K, V>*> records;  // height == 1: root is the only leaf
     std::vector<Page<K>*> children;      // height > 1: root is non-leaf
@@ -233,7 +239,7 @@ struct PageRoot : public Page<K> {
 template <typename K, typename V>
 std::ostream& operator<<(std::ostream& s, const PageRoot<K, V>& page) {
     s << "Page{type=" << PageTypeStr(page.type) << ",height=" << page.height
-      << ",nkeys=" << page.keys.size();
+        << ",nkeys=" << page.keys.size();
     s << ",keys=[";
     for (auto&& k : page.keys) s << k << ",";
     s << "],records=[";

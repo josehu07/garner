@@ -166,6 +166,9 @@ void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path,
             lpage_saved = lpage;
             rpage_saved = rpage;
 
+            // mark the left child as the first child
+            lpage->is_first_child = true;
+
             // populate left child
             std::copy(spage->keys.begin(), spage->keys.begin() + mpos,
                       std::back_inserter(lpage->keys));
@@ -195,6 +198,9 @@ void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path,
             auto* rpage = NewPageItnl(spage->height);
             lpage_saved = lpage;
             rpage_saved = rpage;
+
+            // mark the left child as the first child
+            lpage->is_first_child = true;
 
             // populate left child
             std::copy(spage->keys.begin(), spage->keys.begin() + mpos,
@@ -290,6 +296,13 @@ void BPTree<K, V>::SplitPage(Page<K>* page, std::vector<Page<K>*>& path,
 
             // make current node's next link to new right node
             spage->next = rpage;
+            // mark the first child of the new right node
+            auto* rpage_child = rpage->children[0];
+            if (rpage_child->type == PAGE_ITNL) {
+                reinterpret_cast<PageItnl<K, V>*>(rpage_child)->is_first_child = true;
+            } else if (rpage_child->type == PAGE_LEAF) {
+                reinterpret_cast<PageLeaf<K, V>*>(rpage_child)->is_first_child = true;
+            }
         } else
             throw GarnerException("unknown page type encountered");
 
