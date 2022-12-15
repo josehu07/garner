@@ -32,7 +32,7 @@ def run_simple_benchmarks(scan_percentages, output_prefix, num_threads):
                     "-d",
                     str(64),
                     "-w",
-                    str(10000)
+                    str(10000),
                 ]
                 print(f" Running:  scan {scan_percentage:3d}%  {protocol:7s}")
                 subprocess.run(
