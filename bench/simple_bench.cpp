@@ -229,17 +229,17 @@ static void simple_benchmark_round(garner::TxnProtocol protocol) {
         total_commit_time += thread_txn_stats[tidx].commit_time;
     }
     std::cout << "  Latency breakdown: " << std::endl;
-    std::cout << "    Exec time:     " << std::fixed << std::setw(8)
+    std::cout << "    Exec time:     " << std::fixed << std::setw(10)
               << std::setprecision(4) << total_exec_time / total_num_committed
               << " μs" << std::endl;
-    std::cout << "    Lock time:     " << std::fixed << std::setw(8)
+    std::cout << "    Lock time:     " << std::fixed << std::setw(10)
               << std::setprecision(4) << total_lock_time / total_num_committed
               << " μs" << std::endl;
-    std::cout << "    Validate time: " << std::fixed << std::setw(8)
+    std::cout << "    Validate time: " << std::fixed << std::setw(10)
               << std::setprecision(4)
               << total_validate_time / total_num_committed << " μs"
               << std::endl;
-    std::cout << "    Commit time:   " << std::fixed << std::setw(8)
+    std::cout << "    Commit time:   " << std::fixed << std::setw(10)
               << std::setprecision(4) << total_commit_time / total_num_committed
               << " μs" << std::endl;
 #endif
