@@ -140,7 +140,7 @@ static void client_thread_func(std::stop_token stop_token,
         if (committed) {
             stats->exec_time +=
                 std::chrono::duration_cast<std::chrono::microseconds>(end -
-                                                                     start)
+                                                                      start)
                     .count();
             stats->lock_time += txn_stats.lock_time;
             stats->validate_time += txn_stats.validate_time;
@@ -229,15 +229,19 @@ static void simple_benchmark_round(garner::TxnProtocol protocol) {
         total_commit_time += thread_txn_stats[tidx].commit_time;
     }
     std::cout << "  Latency breakdown: " << std::endl;
-    std::cout << "    Exec time: " << total_exec_time / total_num_committed
+    std::cout << "    Exec time:     " << std::fixed << std::setw(8)
+              << std::setprecision(4) << total_exec_time / total_num_committed
               << " μs" << std::endl;
-    std::cout << "    Lock time: " << total_lock_time / total_num_committed
-              << " ns" << std::endl;
-    std::cout << "    Validate time: "
-              << total_validate_time / total_num_committed << " ns"
+    std::cout << "    Lock time:     " << std::fixed << std::setw(8)
+              << std::setprecision(4) << total_lock_time / total_num_committed
+              << " μs" << std::endl;
+    std::cout << "    Validate time: " << std::fixed << std::setw(8)
+              << std::setprecision(4)
+              << total_validate_time / total_num_committed << " μs"
               << std::endl;
-    std::cout << "    Commit time: " << total_commit_time / total_num_committed
-              << " ns" << std::endl;
+    std::cout << "    Commit time:   " << std::fixed << std::setw(8)
+              << std::setprecision(4) << total_commit_time / total_num_committed
+              << " μs" << std::endl;
 #endif
 
     // stats = gn->GatherStats(true);

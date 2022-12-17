@@ -292,16 +292,17 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
 
     // Record latency breakdown in nanoseconds
     if (stats != NULL) {
-        stats->lock_time = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                               end_lock - start)
-                               .count();
+        stats->lock_time =
+            std::chrono::duration_cast<std::chrono::microseconds>(end_lock -
+                                                                  start)
+                .count();
         stats->validate_time =
-            std::chrono::duration_cast<std::chrono::nanoseconds>(end_validate -
-                                                                 end_lock)
+            std::chrono::duration_cast<std::chrono::microseconds>(end_validate -
+                                                                  end_lock)
                 .count();
         stats->commit_time =
-            std::chrono::duration_cast<std::chrono::nanoseconds>(end_commit -
-                                                                 end_validate)
+            std::chrono::duration_cast<std::chrono::microseconds>(end_commit -
+                                                                  end_validate)
                 .count();
     }
 #endif
