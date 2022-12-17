@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "bptree.hpp"
+#include "build_options.hpp"
 #include "common.hpp"
 #include "include/garner.hpp"
 #include "page.hpp"
@@ -36,17 +37,10 @@ class GarnerImpl : public Garner {
     ~GarnerImpl();
 
     TxnCxt<KType, VType>* StartTxn() override;
-
-#ifndef TXN_STAT
-    bool FinishTxn(TxnCxt<KType, VType>* txn,
-                   std::atomic<uint64_t>* ser_counter = nullptr,
-                   uint64_t* ser_order = nullptr) override;
-#else
     bool FinishTxn(TxnCxt<KType, VType>* txn,
                    std::atomic<uint64_t>* ser_counter = nullptr,
                    uint64_t* ser_order = nullptr,
                    struct TxnStats* stats = nullptr) override;
-#endif
 
     bool Put(KType key, VType value,
              TxnCxt<KType, VType>* txn = nullptr) override;

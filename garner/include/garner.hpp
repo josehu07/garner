@@ -25,14 +25,14 @@ struct BPTreeStats {
     size_t nkeys_leaf;
 };
 
-// For collecting transaction statistics
+std::ostream& operator<<(std::ostream& s, const BPTreeStats& stats);
+
+/** For collecting transaction benchmarking statistics. */
 struct TxnStats {
     double lock_time = 0;
     double validate_time = 0;
     double commit_time = 0;
 };
-
-std::ostream& operator<<(std::ostream& s, const BPTreeStats& stats);
 
 /**
  * Transaction concurrency control protocols enum.
@@ -89,20 +89,10 @@ class Garner {
      *
      * Returns true if commited, or false if aborted.
      */
-#ifndef TXN_STAT
-    virtual bool FinishTxn(TxnCxt<KType, VType>* txn,
-                           std::atomic<uint64_t>* ser_counter = nullptr,
-                           uint64_t* ser_order = nullptr) = 0;
-#else
     virtual bool FinishTxn(TxnCxt<KType, VType>* txn,
                            std::atomic<uint64_t>* ser_counter = nullptr,
                            uint64_t* ser_order = nullptr,
                            TxnStats* stats = nullptr) = 0;
-
-    bool FinishTxn(TxnCxt<KType, VType>* txn, TxnStats* stats) {
-        return FinishTxn(txn, nullptr, nullptr, stats);
-    }
-#endif
 
     /**
      * Insert a key-value pair into B+ tree.

@@ -112,20 +112,14 @@ void TxnSiloHV<K, V>::ExecLeaveScan() {
     last_read_node.clear();
 }
 
-#ifndef TXN_STAT
-template <typename K, typename V>
-bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
-                                uint64_t* ser_order) {
-#else
 template <typename K, typename V>
 bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
                                 uint64_t* ser_order, TxnStats* stats) {
-#endif
     if (must_abort) return false;
 
-#ifdef TXN_STAT
-    auto start = std::chrono::high_resolution_clock::now();
-#endif
+    std::chrono::time_point<std::chrono::high_resolution_clock> start_tp;
+    if constexpr (build_options.txn_stat)
+        start_tp = std::chrono::high_resolution_clock::now();
 
     // phase 1: lock for writes
     // sort records in the following order to prevent deadlocks:
@@ -178,13 +172,13 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
         }
     };
 
+    std::chrono::time_point<std::chrono::high_resolution_clock> end_lock_tp;
+    if constexpr (build_options.txn_stat)
+        end_lock_tp = std::chrono::high_resolution_clock::now();
+
     // <-- serialization point -->
     if (ser_counter != nullptr && ser_order != nullptr)
         *ser_order = (*ser_counter)++;
-
-#ifdef TXN_STAT
-    auto end_lock = std::chrono::high_resolution_clock::now();
-#endif
 
     // phase 2
     size_t idx = 0;
@@ -266,9 +260,9 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
     }
     new_version++;
 
-#ifdef TXN_STAT
-    auto end_validate = std::chrono::high_resolution_clock::now();
-#endif
+    std::chrono::time_point<std::chrono::high_resolution_clock> end_validate_tp;
+    if constexpr (build_options.txn_stat)
+        end_validate_tp = std::chrono::high_resolution_clock::now();
 
     // phase 3: reflect writes with new version number
     for (auto&& witem : write_list) {
@@ -287,25 +281,27 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
         }
     }
 
-#ifdef TXN_STAT
-    auto end_commit = std::chrono::high_resolution_clock::now();
+    std::chrono::time_point<std::chrono::high_resolution_clock> end_commit_tp;
+    if constexpr (build_options.txn_stat)
+        end_commit_tp = std::chrono::high_resolution_clock::now();
 
-    // Record latency breakdown in nanoseconds
-    if (stats != NULL) {
-        stats->lock_time =
-            std::chrono::duration_cast<std::chrono::microseconds>(end_lock -
-                                                                  start)
-                .count();
-        stats->validate_time =
-            std::chrono::duration_cast<std::chrono::microseconds>(end_validate -
-                                                                  end_lock)
-                .count();
-        stats->commit_time =
-            std::chrono::duration_cast<std::chrono::microseconds>(end_commit -
-                                                                  end_validate)
-                .count();
+    // record latency breakdown in microseconds
+    if constexpr (build_options.txn_stat) {
+        if (stats != nullptr) {
+            stats->lock_time =
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    end_lock_tp - start_tp)
+                    .count();
+            stats->validate_time =
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    end_validate_tp - end_lock_tp)
+                    .count();
+            stats->commit_time =
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    end_commit_tp - end_validate_tp)
+                    .count();
+        }
     }
-#endif
 
     return true;
 }

@@ -16,6 +16,7 @@
 #include <thread>
 #include <vector>
 
+#include "build_options.hpp"
 #include "cxxopts.hpp"
 #include "garner.hpp"
 #include "utils.hpp"
@@ -36,10 +37,10 @@ static unsigned SCAN_PERCENTAGE = 25;
 struct TxnStats {
     size_t num_txns = 0;
     size_t num_committed = 0;
-    double exec_time = 0;
-    double lock_time = 0;
-    double validate_time = 0;
-    double commit_time = 0;
+    double exec_time = 0.;
+    double lock_time = 0.;
+    double validate_time = 0.;
+    double commit_time = 0.;
 };
 
 static void client_thread_func(std::stop_token stop_token,
@@ -47,7 +48,7 @@ static void client_thread_func(std::stop_token stop_token,
                                garner::Garner* gn,
                                const std::vector<std::string>* warmup_keys,
                                TxnStats* stats, std::latch* init_barrier) {
-    *stats = {0, 0, 0, 0, 0, 0};
+    *stats = {0, 0, 0., 0., 0., 0.};
 
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -108,9 +109,9 @@ static void client_thread_func(std::stop_token stop_token,
 
         auto* txn = gn->StartTxn();
 
-#ifdef TXN_STAT
-        auto start = std::chrono::high_resolution_clock::now();
-#endif
+        std::chrono::time_point<std::chrono::high_resolution_clock> start_tp;
+        if constexpr (build_options.txn_stat)
+            start_tp = std::chrono::high_resolution_clock::now();
 
         // generate random requests
         for (size_t j = 0; j < txn_ops; ++j) {
@@ -126,26 +127,28 @@ static void client_thread_func(std::stop_token stop_token,
             }
         }
 
-#ifndef TXN_STAT
-        bool committed = gn->FinishTxn(txn);
-#else
-        auto end = std::chrono::high_resolution_clock::now();
+        bool committed;
+        if constexpr (!build_options.txn_stat)
+            committed = gn->FinishTxn(txn);
+        else {
+            auto end_tp = std::chrono::high_resolution_clock::now();
 
-        garner::TxnStats txn_stats;
-        bool committed = gn->FinishTxn(txn, &txn_stats);
+            garner::TxnStats txn_stats;
+            committed = gn->FinishTxn(txn, nullptr, nullptr, &txn_stats);
 
-        // Only record the time committed txns take since they don't always go
-        // through all the phases
-        if (committed) {
-            stats->exec_time +=
-                std::chrono::duration_cast<std::chrono::microseconds>(end -
-                                                                      start)
-                    .count();
-            stats->lock_time += txn_stats.lock_time;
-            stats->validate_time += txn_stats.validate_time;
-            stats->commit_time += txn_stats.commit_time;
+            // only record the time committed txns take since they don't always
+            // go through all the phases
+            if (committed) {
+                stats->exec_time +=
+                    std::chrono::duration_cast<std::chrono::microseconds>(
+                        end_tp - start_tp)
+                        .count();
+                stats->lock_time += txn_stats.lock_time;
+                stats->validate_time += txn_stats.validate_time;
+                stats->commit_time += txn_stats.commit_time;
+            }
         }
-#endif
+
         ++stats->num_txns;
         if (committed) ++stats->num_committed;
     }
@@ -184,7 +187,7 @@ static void simple_benchmark_round(garner::TxnProtocol protocol) {
     // std::cout << stats << std::endl;
 
     std::cout << " Running multi-threaded transaction workload..." << std::endl;
-    std::vector<TxnStats> thread_txn_stats(NUM_THREADS, {0, 0, 0, 0, 0, 0});
+    std::vector<TxnStats> thread_txn_stats(NUM_THREADS, {0, 0, 0., 0., 0., 0.});
     {
         std::vector<std::jthread> threads;
         std::latch init_barrier(NUM_THREADS);
@@ -215,30 +218,33 @@ static void simple_benchmark_round(garner::TxnProtocol protocol) {
     std::cout << "  Throughput: " << std::fixed << std::setw(0)
               << std::setprecision(2) << throughput << " txns/sec" << std::endl;
 
-#ifdef TXN_STAT
-    double total_exec_time = 0, total_lock_time = 0, total_validate_time = 0,
-           total_commit_time = 0;
-    for (unsigned tidx = 0; tidx < NUM_THREADS; ++tidx) {
-        total_exec_time += thread_txn_stats[tidx].exec_time;
-        total_lock_time += thread_txn_stats[tidx].lock_time;
-        total_validate_time += thread_txn_stats[tidx].validate_time;
-        total_commit_time += thread_txn_stats[tidx].commit_time;
+    if constexpr (build_options.txn_stat) {
+        double total_exec_time = 0, total_lock_time = 0,
+               total_validate_time = 0, total_commit_time = 0;
+        for (unsigned tidx = 0; tidx < NUM_THREADS; ++tidx) {
+            total_exec_time += thread_txn_stats[tidx].exec_time;
+            total_lock_time += thread_txn_stats[tidx].lock_time;
+            total_validate_time += thread_txn_stats[tidx].validate_time;
+            total_commit_time += thread_txn_stats[tidx].commit_time;
+        }
+        std::cout << "  Latency breakdown: " << std::endl;
+        std::cout << "    Exec time:     " << std::fixed << std::setw(10)
+                  << std::setprecision(4)
+                  << total_exec_time / total_num_committed << " μs"
+                  << std::endl;
+        std::cout << "    Lock time:     " << std::fixed << std::setw(10)
+                  << std::setprecision(4)
+                  << total_lock_time / total_num_committed << " μs"
+                  << std::endl;
+        std::cout << "    Validate time: " << std::fixed << std::setw(10)
+                  << std::setprecision(4)
+                  << total_validate_time / total_num_committed << " μs"
+                  << std::endl;
+        std::cout << "    Commit time:   " << std::fixed << std::setw(10)
+                  << std::setprecision(4)
+                  << total_commit_time / total_num_committed << " μs"
+                  << std::endl;
     }
-    std::cout << "  Latency breakdown: " << std::endl;
-    std::cout << "    Exec time:     " << std::fixed << std::setw(10)
-              << std::setprecision(4) << total_exec_time / total_num_committed
-              << " μs" << std::endl;
-    std::cout << "    Lock time:     " << std::fixed << std::setw(10)
-              << std::setprecision(4) << total_lock_time / total_num_committed
-              << " μs" << std::endl;
-    std::cout << "    Validate time: " << std::fixed << std::setw(10)
-              << std::setprecision(4)
-              << total_validate_time / total_num_committed << " μs"
-              << std::endl;
-    std::cout << "    Commit time:   " << std::fixed << std::setw(10)
-              << std::setprecision(4) << total_commit_time / total_num_committed
-              << " μs" << std::endl;
-#endif
 
     // stats = gn->GatherStats(true);
     // std::cout << stats << std::endl;

@@ -9,6 +9,7 @@
 #include <variant>
 #include <vector>
 
+#include "build_options.hpp"
 #include "common.hpp"
 #include "page.hpp"
 #include "record.hpp"
@@ -127,13 +128,8 @@ class TxnSiloHV : public TxnCxt<K, V> {
     /**
      * Silo hierarchical validation and commit protocol.
      */
-#ifndef TXN_STAT
-    bool TryCommit(std::atomic<uint64_t>* ser_counter = nullptr,
-                   uint64_t* ser_order = nullptr);
-#else
     bool TryCommit(std::atomic<uint64_t>* ser_counter = nullptr,
                    uint64_t* ser_order = nullptr, TxnStats* stats = nullptr);
-#endif
 
     template <typename KK, typename VV>
     friend std::ostream& operator<<(

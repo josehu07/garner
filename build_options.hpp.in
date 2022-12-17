@@ -1,0 +1,14 @@
+// CMake compile-time build options.
+
+#pragma once
+
+#cmakedefine01 TXN_STAT
+
+/**
+ * Compile-time build options.
+ */
+struct BuildOptions {
+    static constexpr bool txn_stat = static_cast<bool>(TXN_STAT);
+};
+
+static inline constexpr BuildOptions build_options;

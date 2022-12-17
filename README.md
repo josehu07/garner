@@ -38,14 +38,6 @@ cmake -DCMAKE_BUILD_TYPE=Release ..
 make -j
 ```
 
-Build in debug mode:
-
-```bash
-mkdir build-debug && cd build-debug
-cmake -DCMAKE_BUILD_TYPE=Debug ..
-make -j
-```
-
 ## Run
 
 Run all tests (recommend release mode build):
@@ -82,6 +74,22 @@ Run formatter for all source code files:
 
 ```bash
 ./scripts/format-all.sh
+```
+
+Build in debug mode:
+
+```bash
+mkdir build-debug && cd build-debug
+cmake -DCMAKE_BUILD_TYPE=Debug ..
+make -j
+```
+
+Build with certain compile-time options on (e.g., `TXN_STAT`):
+
+```bash
+mkdir build-stats && cd build-stats
+cmake -DCMAKE_BUILD_TYPE=Release -DTXN_STAT=on ..
+make -j
 ```
 
 ## TODO List

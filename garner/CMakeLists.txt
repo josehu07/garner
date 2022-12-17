@@ -21,5 +21,6 @@ add_library(garner ${GARNER_SRC})
 target_include_directories(garner
     PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
+        ${CMAKE_BINARY_DIR}
     PUBLIC
         ${CMAKE_CURRENT_LIST_DIR}/include)
