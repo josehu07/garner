@@ -38,13 +38,23 @@ TxnCxt<Garner::KType, Garner::VType>* GarnerImpl::StartTxn() {
     return txn;
 }
 
+#ifndef TXN_STAT
 bool GarnerImpl::FinishTxn(TxnCxt<KType, VType>* txn,
                            std::atomic<uint64_t>* ser_counter,
                            uint64_t* ser_order) {
+#else
+bool GarnerImpl::FinishTxn(TxnCxt<KType, VType>* txn,
+                           std::atomic<uint64_t>* ser_counter,
+                           uint64_t* ser_order, TxnStats* stats) {
+#endif
     DEBUG("txn %p finishing", static_cast<void*>(txn));
     bool committed = false;
     if (txn != nullptr) {
+#ifndef TXN_STAT
         committed = txn->TryCommit(ser_counter, ser_order);
+#else
+        committed = txn->TryCommit(ser_counter, ser_order, stats);
+#endif
         delete txn;  // deallocate at finish
     }
     return committed;

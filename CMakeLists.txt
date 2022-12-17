@@ -12,6 +12,12 @@ endif()
 add_compile_definitions("$<$<CONFIG:RELEASE>:NDEBUG>")
 add_compile_options(-Wall -Wextra -Wpedantic -Werror)
 
+OPTION(TXN_STAT "Collecting transaction latency breakdown statistics" OFF)
+if(TXN_STAT)
+    add_compile_definitions("TXN_STAT")
+endif()
+
+
 # Garner DB library.
 add_subdirectory(garner)
 

@@ -112,10 +112,20 @@ void TxnSiloHV<K, V>::ExecLeaveScan() {
     last_read_node.clear();
 }
 
+#ifndef TXN_STAT
 template <typename K, typename V>
 bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
                                 uint64_t* ser_order) {
+#else
+template <typename K, typename V>
+bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
+                                uint64_t* ser_order, TxnStats* stats) {
+#endif
     if (must_abort) return false;
+
+#ifdef TXN_STAT
+    auto start = std::chrono::steady_clock::now();
+#endif
 
     // phase 1: lock for writes
     // sort records in the following order to prevent deadlocks:
@@ -171,6 +181,10 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
     // <-- serialization point -->
     if (ser_counter != nullptr && ser_order != nullptr)
         *ser_order = (*ser_counter)++;
+
+#ifdef TXN_STAT
+    auto end_lock = std::chrono::steady_clock::now();
+#endif
 
     // phase 2
     size_t idx = 0;
@@ -252,6 +266,10 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
     }
     new_version++;
 
+#ifdef TXN_STAT
+    auto end_validate = std::chrono::steady_clock::now();
+#endif
+
     // phase 3: reflect writes with new version number
     for (auto&& witem : write_list) {
         if (witem.is_record) {
@@ -268,6 +286,25 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
             DEBUG("page hv_sem decrement %p", static_cast<void*>(witem.page));
         }
     }
+
+#ifdef TXN_STAT
+    auto end_commit = std::chrono::steady_clock::now();
+
+    // Record latency breakdown in nanoseconds
+    if (stats != NULL) {
+        stats->lock_time = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                               end_lock - start)
+                               .count();
+        stats->validate_time =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(end_validate -
+                                                                 end_lock)
+                .count();
+        stats->commit_time =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(end_commit -
+                                                                 end_validate)
+                .count();
+    }
+#endif
 
     return true;
 }

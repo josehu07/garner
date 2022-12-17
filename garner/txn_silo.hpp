@@ -68,8 +68,13 @@ class TxnSilo : public TxnCxt<K, V> {
     /**
      * Silo validation and commit protocol.
      */
+#ifndef TXN_STAT
     bool TryCommit(std::atomic<uint64_t>* ser_counter = nullptr,
                    uint64_t* ser_order = nullptr);
+#else
+    bool TryCommit(std::atomic<uint64_t>* ser_counter = nullptr,
+                   uint64_t* ser_order = nullptr, TxnStats* stats = nullptr);
+#endif
 
     template <typename KK, typename VV>
     friend std::ostream& operator<<(std::ostream& s,
