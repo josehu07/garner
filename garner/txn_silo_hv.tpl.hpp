@@ -124,7 +124,7 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
     if (must_abort) return false;
 
 #ifdef TXN_STAT
-    auto start = std::chrono::steady_clock::now();
+    auto start = std::chrono::high_resolution_clock::now();
 #endif
 
     // phase 1: lock for writes
@@ -183,7 +183,7 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
         *ser_order = (*ser_counter)++;
 
 #ifdef TXN_STAT
-    auto end_lock = std::chrono::steady_clock::now();
+    auto end_lock = std::chrono::high_resolution_clock::now();
 #endif
 
     // phase 2
@@ -267,7 +267,7 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
     new_version++;
 
 #ifdef TXN_STAT
-    auto end_validate = std::chrono::steady_clock::now();
+    auto end_validate = std::chrono::high_resolution_clock::now();
 #endif
 
     // phase 3: reflect writes with new version number
@@ -288,7 +288,7 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
     }
 
 #ifdef TXN_STAT
-    auto end_commit = std::chrono::steady_clock::now();
+    auto end_commit = std::chrono::high_resolution_clock::now();
 
     // Record latency breakdown in nanoseconds
     if (stats != NULL) {

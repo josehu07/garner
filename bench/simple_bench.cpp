@@ -110,7 +110,7 @@ static void client_thread_func(std::stop_token stop_token,
         auto* txn = gn->StartTxn();
 
 #ifdef TXN_STAT
-        auto start = std::chrono::steady_clock::now();
+        auto start = std::chrono::high_resolution_clock::now();
 #endif
 
         // generate random requests
@@ -130,7 +130,7 @@ static void client_thread_func(std::stop_token stop_token,
 #ifndef TXN_STAT
         bool committed = gn->FinishTxn(txn);
 #else
-        auto end = std::chrono::steady_clock::now();
+        auto end = std::chrono::high_resolution_clock::now();
 
         garner::TxnStats txn_stats;
         bool committed = gn->FinishTxn(txn, &txn_stats);
@@ -139,7 +139,7 @@ static void client_thread_func(std::stop_token stop_token,
         // through all the phases
         if (committed) {
             stats->exec_time +=
-                std::chrono::duration_cast<std::chrono::nanoseconds>(end -
+                std::chrono::duration_cast<std::chrono::microseconds>(end -
                                                                      start)
                     .count();
             stats->lock_time += txn_stats.lock_time;
@@ -223,13 +223,14 @@ static void simple_benchmark_round(garner::TxnProtocol protocol) {
     double total_exec_time = 0, total_lock_time = 0, total_validate_time = 0,
            total_commit_time = 0;
     for (unsigned tidx = 0; tidx < NUM_THREADS; ++tidx) {
+        total_exec_time += thread_txn_stats[tidx].exec_time;
         total_lock_time += thread_txn_stats[tidx].lock_time;
         total_validate_time += thread_txn_stats[tidx].validate_time;
         total_commit_time += thread_txn_stats[tidx].commit_time;
     }
     std::cout << "  Latency breakdown: " << std::endl;
     std::cout << "    Exec time: " << total_exec_time / total_num_committed
-              << " ns" << std::endl;
+              << " μs" << std::endl;
     std::cout << "    Lock time: " << total_lock_time / total_num_committed
               << " ns" << std::endl;
     std::cout << "    Validate time: "
