@@ -114,8 +114,12 @@ void TxnSiloHV<K, V>::ExecLeaveScan() {
 
 template <typename K, typename V>
 bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
-                                uint64_t* ser_order) {
+                                uint64_t* ser_order, TxnStats* stats) {
     if (must_abort) return false;
+
+    std::chrono::time_point<std::chrono::high_resolution_clock> start_tp;
+    if constexpr (build_options.txn_stat)
+        start_tp = std::chrono::high_resolution_clock::now();
 
     // phase 1: lock for writes
     // sort records in the following order to prevent deadlocks:
@@ -167,6 +171,10 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
             }
         }
     };
+
+    std::chrono::time_point<std::chrono::high_resolution_clock> end_lock_tp;
+    if constexpr (build_options.txn_stat)
+        end_lock_tp = std::chrono::high_resolution_clock::now();
 
     // <-- serialization point -->
     if (ser_counter != nullptr && ser_order != nullptr)
@@ -252,6 +260,10 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
     }
     new_version++;
 
+    std::chrono::time_point<std::chrono::high_resolution_clock> end_validate_tp;
+    if constexpr (build_options.txn_stat)
+        end_validate_tp = std::chrono::high_resolution_clock::now();
+
     // phase 3: reflect writes with new version number
     for (auto&& witem : write_list) {
         if (witem.is_record) {
@@ -266,6 +278,28 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
             witem.page->hv_ver = new_version;
             --witem.page->hv_sem;
             DEBUG("page hv_sem decrement %p", static_cast<void*>(witem.page));
+        }
+    }
+
+    std::chrono::time_point<std::chrono::high_resolution_clock> end_commit_tp;
+    if constexpr (build_options.txn_stat)
+        end_commit_tp = std::chrono::high_resolution_clock::now();
+
+    // record latency breakdown in microseconds
+    if constexpr (build_options.txn_stat) {
+        if (stats != nullptr) {
+            stats->lock_time =
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    end_lock_tp - start_tp)
+                    .count();
+            stats->validate_time =
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    end_validate_tp - end_lock_tp)
+                    .count();
+            stats->commit_time =
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    end_commit_tp - end_validate_tp)
+                    .count();
         }
     }
 

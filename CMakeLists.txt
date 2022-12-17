@@ -12,6 +12,11 @@ endif()
 add_compile_definitions("$<$<CONFIG:RELEASE>:NDEBUG>")
 add_compile_options(-Wall -Wextra -Wpedantic -Werror)
 
+# Benchmarking options.
+OPTION(TXN_STAT "Collect transaction latency breakdown statistics" OFF)
+
+configure_file("build_options.hpp.in" "build_options.hpp")
+
 # Garner DB library.
 add_subdirectory(garner)
 

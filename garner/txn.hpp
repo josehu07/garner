@@ -1,6 +1,7 @@
 // TxnCxt -- base transaction and concurrency control context type.
 
 #include <atomic>
+#include <chrono>
 #include <iostream>
 
 #include "record.hpp"
@@ -50,7 +51,8 @@ class TxnCxt {
      * Returns true if committed, or false if aborted.
      */
     virtual bool TryCommit(std::atomic<uint64_t>* ser_counter = nullptr,
-                           uint64_t* ser_order = nullptr) = 0;
+                           uint64_t* ser_order = nullptr,
+                           TxnStats* stats = nullptr) = 0;
 };
 
 template <typename K, typename V>

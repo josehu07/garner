@@ -6,6 +6,7 @@
 #include <map>
 #include <vector>
 
+#include "build_options.hpp"
 #include "common.hpp"
 #include "record.hpp"
 #include "txn.hpp"
@@ -69,7 +70,7 @@ class TxnSilo : public TxnCxt<K, V> {
      * Silo validation and commit protocol.
      */
     bool TryCommit(std::atomic<uint64_t>* ser_counter = nullptr,
-                   uint64_t* ser_order = nullptr);
+                   uint64_t* ser_order = nullptr, TxnStats* stats = nullptr);
 
     template <typename KK, typename VV>
     friend std::ostream& operator<<(std::ostream& s,
