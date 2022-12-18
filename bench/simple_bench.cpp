@@ -50,14 +50,14 @@ static void client_thread_func(std::stop_token stop_token,
                                garner::Garner* gn,
                                const std::vector<std::string>* warmup_keys,
                                TxnStats* stats, std::latch* init_barrier) {
-
     std::random_device rd;
     std::mt19937 gen(rd());
 
     std::string val = gen_rand_string(gen, VAL_LEN);
 
     std::uniform_int_distribution<size_t> rand_idx(0, warmup_keys->size() - 1);
-    std::uniform_int_distribution<size_t> rand_scan_idx(0, warmup_keys->size() - SCAN_RANGE - 1);
+    std::uniform_int_distribution<size_t> rand_scan_idx(
+        0, warmup_keys->size() - SCAN_RANGE - 1);
     std::uniform_int_distribution<unsigned> rand_is_scan(
         1, SCAN_PERCENTAGE * 10 + (100 - SCAN_PERCENTAGE));
 
