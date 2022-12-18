@@ -34,7 +34,6 @@ static size_t MAX_OPS_PER_TXN = 10;
 static unsigned SCAN_PERCENTAGE = 25;
 static unsigned WRITE_PERCENTAGE = 10;
 static unsigned SCAN_RANGE = 0;
-// TODO: control scan range key space
 
 struct TxnStats {
     size_t num_txns = 0;
