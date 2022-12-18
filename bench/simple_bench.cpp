@@ -32,6 +32,7 @@ static unsigned NUM_THREADS = 16;
 static size_t NUM_OPS_WARMUP = 50000;
 static size_t MAX_OPS_PER_TXN = 10;
 static unsigned SCAN_PERCENTAGE = 25;
+static unsigned WRITE_PERCENTAGE = 10;
 // TODO: control scan range key space
 
 struct TxnStats {
@@ -48,7 +49,7 @@ static void client_thread_func(std::stop_token stop_token,
                                garner::Garner* gn,
                                const std::vector<std::string>* warmup_keys,
                                TxnStats* stats, std::latch* init_barrier) {
-    *stats = {0, 0, 0., 0., 0., 0.};
+    
 
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -56,14 +57,18 @@ static void client_thread_func(std::stop_token stop_token,
     std::string val = gen_rand_string(gen, VAL_LEN);
 
     std::uniform_int_distribution<size_t> rand_idx(0, warmup_keys->size() - 1);
-    std::uniform_int_distribution<unsigned> rand_is_scan(1, 100);
+    std::uniform_int_distribution<unsigned> rand_is_scan(
+        1, SCAN_PERCENTAGE * 10 + (100 - SCAN_PERCENTAGE));
 
     // in non-scan transactions, 5% are write operations
-    std::uniform_int_distribution<unsigned> rand_op_type(1, 20);
+    std::uniform_int_distribution<unsigned> rand_op_type(1,
+                                                         100 - SCAN_PERCENTAGE);
 
     auto GenRandomReq = [&](bool is_scan_txn) -> GarnerReq {
         // randomly pick an op type
-        GarnerOp op = is_scan_txn ? SCAN : (rand_op_type(gen) == 1) ? PUT : GET;
+        GarnerOp op = is_scan_txn
+                          ? SCAN
+                          : (rand_op_type(gen) <= WRITE_PERCENTAGE) ? PUT : GET;
 
         if (op == GET) {
             std::string key = warmup_keys->at(rand_idx(gen));
@@ -102,7 +107,7 @@ static void client_thread_func(std::stop_token stop_token,
         if (stop_token.stop_requested()) break;
 
         // generate scan only or not decision
-        bool scan_txn = (rand_is_scan_txn(gen) < SCAN_PERCENTAGE);
+        bool scan_txn = (rand_is_scan_txn(gen) <= SCAN_PERCENTAGE * 10);
 
         // generate number of ops for this transaction
         size_t txn_ops = scan_txn ? rand_txn_ops_scan(gen) : rand_txn_ops(gen);
@@ -159,7 +164,8 @@ static void simple_benchmark_round(garner::TxnProtocol protocol) {
 
     std::cout << " Degree=" << TEST_DEGREE << " #threads=" << NUM_THREADS
               << " length=" << ROUND_SECS << "s"
-              << " scan=" << SCAN_PERCENTAGE << "%" << std::endl;
+              << " scan=" << SCAN_PERCENTAGE << "%"
+              << " write=" << WRITE_PERCENTAGE << "%" << std::endl;
 
     // garner::BPTreeStats stats = gn->GatherStats(true);
     // std::cout << stats << std::endl;
@@ -271,7 +277,9 @@ int main(int argc, char* argv[]) {
         "m,max_ops_txn", "max number of ops per transaction",
         cxxopts::value<size_t>(MAX_OPS_PER_TXN)->default_value("10"))(
         "c,scan_percent", "percentage of scan operations",
-        cxxopts::value<unsigned>(SCAN_PERCENTAGE)->default_value("25"));
+        cxxopts::value<unsigned>(SCAN_PERCENTAGE)->default_value("25"))(
+        "r,write_percent", "percentage of write operations",
+        cxxopts::value<unsigned>(WRITE_PERCENTAGE)->default_value("10"));
     auto result = cmd_args.parse(argc, argv);
 
     std::set<std::string> valid_protocols{"none", "silo", "silo_hv", "silo_nr"};
@@ -302,6 +310,12 @@ int main(int argc, char* argv[]) {
     if (MAX_OPS_PER_TXN < 10) {
         std::cerr << "Error: max number of ops per transaction too small "
                   << MAX_OPS_PER_TXN << std::endl;
+        return 1;
+    }
+
+    if (WRITE_PERCENTAGE + SCAN_PERCENTAGE > 100) {
+        std::cerr << "Error: percent of scan and write ops exceed 100%"
+                  << std::endl;
         return 1;
     }
 
