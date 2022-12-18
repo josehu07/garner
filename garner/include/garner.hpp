@@ -29,9 +29,9 @@ std::ostream& operator<<(std::ostream& s, const BPTreeStats& stats);
 
 /** For collecting transaction benchmarking statistics. */
 struct TxnStats {
-    double lock_time = 0;
-    double validate_time = 0;
-    double commit_time = 0;
+    double lock_time = 0.;
+    double validate_time = 0.;
+    double commit_time = 0.;
 };
 
 /**

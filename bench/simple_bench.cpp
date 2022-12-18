@@ -33,6 +33,7 @@ static size_t NUM_OPS_WARMUP = 50000;
 static size_t MAX_OPS_PER_TXN = 10;
 static unsigned SCAN_PERCENTAGE = 25;
 static unsigned WRITE_PERCENTAGE = 10;
+static unsigned SCAN_RANGE = 0;
 // TODO: control scan range key space
 
 struct TxnStats {
@@ -49,7 +50,6 @@ static void client_thread_func(std::stop_token stop_token,
                                garner::Garner* gn,
                                const std::vector<std::string>* warmup_keys,
                                TxnStats* stats, std::latch* init_barrier) {
-    
 
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -57,6 +57,7 @@ static void client_thread_func(std::stop_token stop_token,
     std::string val = gen_rand_string(gen, VAL_LEN);
 
     std::uniform_int_distribution<size_t> rand_idx(0, warmup_keys->size() - 1);
+    std::uniform_int_distribution<size_t> rand_scan_idx(0, warmup_keys->size() - SCAN_RANGE - 1);
     std::uniform_int_distribution<unsigned> rand_is_scan(
         1, SCAN_PERCENTAGE * 10 + (100 - SCAN_PERCENTAGE));
 
@@ -79,11 +80,18 @@ static void client_thread_func(std::stop_token stop_token,
             return GarnerReq(PUT, std::move(key), "", val);
 
         } else {
-            std::string lkey = gen_rand_string(gen, KEY_LEN);
+            std::string lkey;
             std::string rkey;
-            do {
-                rkey = gen_rand_string(gen, KEY_LEN);
-            } while (rkey < lkey);
+            if (SCAN_PERCENTAGE == 0) {
+                do {
+                    lkey = gen_rand_string(gen, KEY_LEN);
+                    rkey = gen_rand_string(gen, KEY_LEN);
+                } while (rkey < lkey);
+            } else {
+                auto scan_idx = rand_scan_idx(gen);
+                lkey = warmup_keys->at(scan_idx);
+                rkey = warmup_keys->at(scan_idx + SCAN_RANGE);
+            }
             return GarnerReq(SCAN, std::move(lkey), std::move(rkey), "");
         }
     };
@@ -279,7 +287,9 @@ int main(int argc, char* argv[]) {
         "c,scan_percent", "percentage of scan operations",
         cxxopts::value<unsigned>(SCAN_PERCENTAGE)->default_value("25"))(
         "r,write_percent", "percentage of write operations",
-        cxxopts::value<unsigned>(WRITE_PERCENTAGE)->default_value("10"));
+        cxxopts::value<unsigned>(WRITE_PERCENTAGE)->default_value("10"))(
+        "s,scan_range", "number of keys covered in each scan, 0 means random",
+        cxxopts::value<unsigned>(SCAN_RANGE)->default_value("0"));
     auto result = cmd_args.parse(argc, argv);
 
     std::set<std::string> valid_protocols{"none", "silo", "silo_hv", "silo_nr"};
