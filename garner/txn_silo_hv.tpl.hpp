@@ -244,6 +244,10 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
         }
     }
 
+    std::chrono::time_point<std::chrono::high_resolution_clock> end_validate_tp;
+    if constexpr (build_options.txn_stat)
+        end_validate_tp = std::chrono::high_resolution_clock::now();
+
     // generate new version number, one greater than all versions seen by
     // this transaction
     uint64_t new_version = 0;
@@ -259,10 +263,6 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
         }
     }
     new_version++;
-
-    std::chrono::time_point<std::chrono::high_resolution_clock> end_validate_tp;
-    if constexpr (build_options.txn_stat)
-        end_validate_tp = std::chrono::high_resolution_clock::now();
 
     // phase 3: reflect writes with new version number
     for (auto&& witem : write_list) {
