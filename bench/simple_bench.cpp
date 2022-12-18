@@ -33,7 +33,7 @@ static size_t NUM_OPS_WARMUP = 50000;
 static size_t MAX_OPS_PER_TXN = 10;
 static unsigned SCAN_PERCENTAGE = 25;
 static unsigned WRITE_PERCENTAGE = 10;
-static unsigned SCAN_RANGE = 0;
+static size_t SCAN_RANGE = 0;
 
 struct TxnStats {
     size_t num_txns = 0;
@@ -57,18 +57,17 @@ static void client_thread_func(std::stop_token stop_token,
     std::uniform_int_distribution<size_t> rand_idx(0, warmup_keys->size() - 1);
     std::uniform_int_distribution<size_t> rand_scan_idx(
         0, warmup_keys->size() - SCAN_RANGE - 1);
-    std::uniform_int_distribution<unsigned> rand_is_scan(
-        1, SCAN_PERCENTAGE * 10 + (100 - SCAN_PERCENTAGE));
 
-    // in non-scan transactions, 5% are write operations
-    std::uniform_int_distribution<unsigned> rand_op_type(1,
-                                                         100 - SCAN_PERCENTAGE);
+    std::uniform_int_distribution<unsigned> rand_is_scan_txn(1, 100);
+    std::uniform_int_distribution<unsigned> rand_is_write_op(
+        1, 100 - SCAN_PERCENTAGE);
 
     auto GenRandomReq = [&](bool is_scan_txn) -> GarnerReq {
         // randomly pick an op type
-        GarnerOp op = is_scan_txn
-                          ? SCAN
-                          : (rand_op_type(gen) <= WRITE_PERCENTAGE) ? PUT : GET;
+        GarnerOp op =
+            is_scan_txn
+                ? SCAN
+                : (rand_is_write_op(gen) <= WRITE_PERCENTAGE) ? PUT : GET;
 
         if (op == GET) {
             std::string key = warmup_keys->at(rand_idx(gen));
@@ -81,7 +80,7 @@ static void client_thread_func(std::stop_token stop_token,
         } else {
             std::string lkey;
             std::string rkey;
-            if (SCAN_PERCENTAGE == 0) {
+            if (SCAN_RANGE == 0) {
                 do {
                     lkey = gen_rand_string(gen, KEY_LEN);
                     rkey = gen_rand_string(gen, KEY_LEN);
@@ -97,8 +96,7 @@ static void client_thread_func(std::stop_token stop_token,
 
     std::uniform_int_distribution<size_t> rand_txn_ops(1, MAX_OPS_PER_TXN);
     std::uniform_int_distribution<size_t> rand_txn_ops_scan(
-        1, MAX_OPS_PER_TXN / 10);
-    std::uniform_int_distribution<unsigned> rand_is_scan_txn(1, 100);
+        1, MAX_OPS_PER_TXN / 10);  // do fewer scans since slow
 
     std::string get_buf;
     bool get_found;
@@ -114,7 +112,7 @@ static void client_thread_func(std::stop_token stop_token,
         if (stop_token.stop_requested()) break;
 
         // generate scan only or not decision
-        bool scan_txn = (rand_is_scan_txn(gen) <= SCAN_PERCENTAGE * 10);
+        bool scan_txn = (rand_is_scan_txn(gen) <= SCAN_PERCENTAGE);
 
         // generate number of ops for this transaction
         size_t txn_ops = scan_txn ? rand_txn_ops_scan(gen) : rand_txn_ops(gen);
@@ -288,7 +286,7 @@ int main(int argc, char* argv[]) {
         "r,write_percent", "percentage of write operations",
         cxxopts::value<unsigned>(WRITE_PERCENTAGE)->default_value("10"))(
         "s,scan_range", "number of keys covered in each scan, 0 means random",
-        cxxopts::value<unsigned>(SCAN_RANGE)->default_value("0"));
+        cxxopts::value<size_t>(SCAN_RANGE)->default_value("0"));
     auto result = cmd_args.parse(argc, argv);
 
     std::set<std::string> valid_protocols{"none", "silo", "silo_hv", "silo_nr"};
@@ -321,9 +319,13 @@ int main(int argc, char* argv[]) {
                   << MAX_OPS_PER_TXN << std::endl;
         return 1;
     }
-
     if (WRITE_PERCENTAGE + SCAN_PERCENTAGE > 100) {
-        std::cerr << "Error: percent of scan and write ops exceed 100%"
+        std::cerr << "Error: percentage of scan + write ops exceed 100%"
+                  << std::endl;
+        return 1;
+    }
+    if (SCAN_RANGE >= NUM_OPS_WARMUP) {
+        std::cerr << "Error: scan range exceeds number of warmup ops"
                   << std::endl;
         return 1;
     }
