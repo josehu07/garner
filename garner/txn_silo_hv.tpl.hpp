@@ -26,9 +26,8 @@ bool TxnSiloHV<K, V>::ExecReadRecord(Record<K, V>* record, V& value) {
         value = std::move(read_value);
 
     // insert into read set if not in it yet
-    if (read_set.contains(record)) {
-        assert(read_list[read_set[record]].is_record);
-        if (read_list[read_set[record]].version != read_version) {
+    if (record_set.contains(record)) {
+        if (record_list[record_set[record]].version != read_version) {
             // same record read multiple times by the transaction and versions
             // already mismatch
             // we could just early abort here, but for simplicity, we save
@@ -36,11 +35,9 @@ bool TxnSiloHV<K, V>::ExecReadRecord(Record<K, V>* record, V& value) {
             must_abort = true;
         }
     } else {
-        read_list.push_back(ReadListItem{.is_record = true,
-                                         .record = record,
-                                         .version = read_version,
-                                         .skip_to = 0});
-        read_set[record] = read_list.size() - 1;
+        record_list.push_back(RecordListItem{.record = record,
+                                             .version = read_version});
+        record_set[record] = record_list.size() - 1;
     }
 
     return true;
@@ -69,19 +66,22 @@ void TxnSiloHV<K, V>::ExecReadTraverseNode(Page<K>* page) {
         // TODO: reading root page's height may not be thread-safe
         unsigned height = page->height;
         if (last_read_node.contains(height)) {
-            read_list[last_read_node[height]].skip_to = read_list.size();
+            auto&& page_record = page_list[last_read_node[height]];
+            page_record.record_idx_end = record_list.size();
+            page_record.page_skip_to = page_list.size();
             last_read_node.erase(height);
         }
 
         // append to read list if not already in the list pushed by a previous
         // operation in the same transaction
-        if (!read_set.contains(page)) {
-            read_list.push_back(ReadListItem{.is_record = false,
-                                             .page = page,
+        if (!page_set.contains(page)) {
+            page_list.push_back(PageListItem{.page = page,
                                              .version = page->hv_ver,
-                                             .skip_to = 0});
-            read_set[page] = read_list.size() - 1;
-            last_read_node[height] = read_list.size() - 1;
+                                             .record_idx_start = record_list.size(),
+                                             .record_idx_end = 0,
+                                             .page_skip_to = 0});
+            page_set[page] = page_list.size() - 1;
+            last_read_node[height] = page_list.size() - 1;
         }
     }
 }
@@ -107,8 +107,11 @@ template <typename K, typename V>
 void TxnSiloHV<K, V>::ExecLeaveScan() {
     in_scan = false;
     // set dangling node items' skip_to
-    for (auto&& [_, idx] : last_read_node)
-        read_list[idx].skip_to = read_list.size();
+    for (auto&& [_, idx] : last_read_node) {
+        auto&& page_record = page_list[idx];
+        page_record.record_idx_end = record_list.size();
+        page_record.page_skip_to = page_list.size();
+    }
     last_read_node.clear();
 }
 
@@ -181,67 +184,93 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
         *ser_order = (*ser_counter)++;
 
     // phase 2
-    size_t idx = 0;
-    while (!no_read_validation && idx < read_list.size()) {
-        auto&& ritem = read_list[idx];
+    auto validate_record = [this](const RecordListItem& ritem) {
+        bool latched = false;
+        bool me_writing = write_set.contains(ritem.record);
+        if (!me_writing) {
+            latched = ritem.record->latch.try_lock_shared();
+            DEBUG("record latch R try_acquire %p %s",
+                    static_cast<void*>(ritem.record), latched ? "yes" : "no");
+            if (!latched) {
+                return false;
+            }
+        }
 
-        if (ritem.is_record) {
-            // if possibly locked by some writer other than me, abort
-            bool latched = false;
-            bool me_writing = write_set.contains(ritem.record);
-            if (!me_writing) {
-                latched = ritem.record->latch.try_lock_shared();
-                DEBUG("record latch R try_acquire %p %s",
-                      static_cast<void*>(ritem.record), latched ? "yes" : "no");
-                if (!latched) {
+        // if version mismatch, abort
+        if (!me_writing && !latched) {
+            ritem.record->latch.lock_shared();
+            DEBUG("record latch R acquire %p",
+                  static_cast<void*>(ritem.record));
+        }
+        uint64_t curr_version = ritem.record->version;
+        if (!me_writing) {
+            ritem.record->latch.unlock_shared();
+            DEBUG("record latch R release %p",
+                  static_cast<void*>(ritem.record));
+        }
+
+        if (ritem.version != curr_version) {
+            return false;
+        }
+
+        return true;
+    };
+
+    auto validate_page = [this](const PageListItem& pitem) {
+            // check semaphore field of tree page
+            uint64_t hv_sem = pitem.page->hv_sem;
+            if (hv_sem > 1 ||
+                (hv_sem == 1 && !write_set.contains(pitem.page))) {
+                return false;
+            }
+
+            // check if tree page version changed by any committed writer
+            if (pitem.version != pitem.page->hv_ver) {
+                return false;
+            }
+
+            return true;
+    };
+
+    if (!no_read_validation) {
+
+        size_t page_idx = 0;
+        size_t record_idx = 0;
+
+        // iterate through all page nodes
+        while (page_idx < page_list.size()) {
+            auto&& pitem = page_list[page_idx];
+            
+            // validate records between record_idx and page's start record idx
+            for (; record_idx < pitem.record_idx_start; record_idx++) {
+                if (!validate_record(record_list[record_idx])){
                     release_all_write_latches();
                     return false;
                 }
             }
 
-            // if version mismatch, abort
-            if (!me_writing && !latched) {
-                ritem.record->latch.lock_shared();
-                DEBUG("record latch R acquire %p",
-                      static_cast<void*>(ritem.record));
-            }
-            uint64_t curr_version = ritem.record->version;
-            if (!me_writing) {
-                ritem.record->latch.unlock_shared();
-                DEBUG("record latch R release %p",
-                      static_cast<void*>(ritem.record));
+            // validate the page
+            if (validate_page(pitem)) {
+                // page version is not stale, skip the child records
+                page_idx = pitem.page_skip_to;
+                record_idx = pitem.record_idx_end;
+            } else {
+                // go to the next page
+                // if this is a leaf page, next page will have a different start
+                // record, so everything covered by this page will be validated
+                page_idx ++;
             }
 
-            if (ritem.version != curr_version) {
+        }
+
+        // we are done validating all pages, validate the rest of records
+        for (; record_idx < record_list.size(); record_idx ++) {
+            if (!validate_record(record_list[record_idx])){
                 release_all_write_latches();
                 return false;
             }
-
-            idx++;
-
-        } else {
-            // check semaphore field of tree page
-            uint64_t hv_sem = ritem.page->hv_sem;
-            if (hv_sem > 1 ||
-                (hv_sem == 1 && !write_set.contains(ritem.page))) {
-                idx++;
-                continue;
-            }
-
-            // check if tree page version changed by any committed writer
-            if (ritem.version != ritem.page->hv_ver) {
-                idx++;
-                continue;
-            }
-
-            // everything under this subtree have not been modified, skip
-            // children nodes
-            if (ritem.skip_to > 0) {
-                assert(ritem.skip_to > idx);
-                idx = ritem.skip_to;
-            } else
-                idx++;
         }
+        
     }
 
     std::chrono::time_point<std::chrono::high_resolution_clock> end_validate_tp;
@@ -251,8 +280,10 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
     // generate new version number, one greater than all versions seen by
     // this transaction
     uint64_t new_version = 0;
-    for (auto&& ritem : read_list)
+    for (auto&& ritem : record_list)
         if (ritem.version > new_version) new_version = ritem.version;
+    for (auto&& pitem : page_list)
+        if (pitem.version > new_version) new_version = pitem.version;
     for (auto&& witem : write_list) {
         if (witem.is_record) {
             if (witem.record->version > new_version)

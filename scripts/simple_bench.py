@@ -25,6 +25,7 @@ def run_simple_benchmarks(
     degree,
     num_threads,
     num_warmup_ops,
+    write_percentage,
     scan_range,
     collect_latency,
 ):
@@ -47,6 +48,8 @@ def run_simple_benchmarks(
                     str(num_threads),
                     "-w",
                     str(num_warmup_ops),
+                    "-r",
+                    str(write_percentage),
                     "-s",
                     str(scan_range),
                 ]
@@ -181,19 +184,20 @@ def plot_results_throughput(scan_percentages, results, output_prefix):
 
 def plot_results_latency(scan_percentages, results, output_prefix):
     for scan_percentage in scan_percentages:
-        labels = PROTOCOLS
+        # labels = PROTOCOLS
+        labels = ("silo", "silo_hv")
         exec_times = [
-            results[protocol][scan_percentage]["exec_time"] for protocol in PROTOCOLS
+            results[protocol][scan_percentage]["exec_time"] for protocol in labels
         ]
         lock_times = [
-            results[protocol][scan_percentage]["lock_time"] for protocol in PROTOCOLS
+            results[protocol][scan_percentage]["lock_time"] for protocol in labels
         ]
         validate_times = [
             results[protocol][scan_percentage]["validate_time"]
-            for protocol in PROTOCOLS
+            for protocol in labels
         ]
         commit_times = [
-            results[protocol][scan_percentage]["commit_time"] for protocol in PROTOCOLS
+            results[protocol][scan_percentage]["commit_time"] for protocol in labels
         ]
 
         plt.figure(scan_percentage)
@@ -202,7 +206,7 @@ def plot_results_latency(scan_percentages, results, output_prefix):
         plt.barh(labels, exec_times, label="Exec", color="mediumseagreen")
         left_lock = exec_times
         plt.barh(labels, lock_times, left=left_lock, label="Phase 1", color="orange")
-        left_validate = [exec_times[i] + lock_times[i] for i in range(len(PROTOCOLS))]
+        left_validate = [exec_times[i] + lock_times[i] for i in range(len(labels))]
         plt.barh(
             labels,
             validate_times,
@@ -212,7 +216,7 @@ def plot_results_latency(scan_percentages, results, output_prefix):
         )
         left_commit = [
             exec_times[i] + lock_times[i] + validate_times[i]
-            for i in range(len(PROTOCOLS))
+            for i in range(len(labels))
         ]
         plt.barh(labels, commit_times, left=left_commit, label="Phase 3", color="red")
 
@@ -229,10 +233,11 @@ def plot_results_latency(scan_percentages, results, output_prefix):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-o", "--output_prefix", dest="output_prefix", required=True)
-    parser.add_argument("-d", "--degree", dest="degree", default=256)
-    parser.add_argument("-t", "--num_threads", dest="num_threads", default=16)
-    parser.add_argument("-w", "--num_warmup_ops", dest="num_warmup_ops", default=50000)
-    parser.add_argument("-s", "--scan_range", dest="scan_range", default=0)
+    parser.add_argument("-d", "--degree", dest="degree", type=int, default=256)
+    parser.add_argument("-t", "--num_threads", dest="num_threads", type=int, default=16)
+    parser.add_argument("-w", "--num_warmup_ops", dest="num_warmup_ops", type=int, default=50000)
+    parser.add_argument("-r", "--write_percentage", dest="write_percentage", type=int, default=10)
+    parser.add_argument("-s", "--scan_range", dest="scan_range", type=int, default=0)
     parser.add_argument("-l", "--latency", dest="collect_latency", action="store_true")
     parser.add_argument(
         "scan_percentages",
@@ -259,8 +264,12 @@ if __name__ == "__main__":
         print(f"Error: invalid scan range {args.scan_range}")
         exit(1)
 
+    if args.write_percentage < 0:
+        print(f"Error: invalid write percentage {args.write_percentage}")
+        exit(1)
+
     for scan_percentage in args.scan_percentages:
-        if scan_percentage < 0 or scan_percentage > 100:
+        if scan_percentage < 0 or scan_percentage + args.write_percentage > 100:
             print(f"Error: invalid scan percentage {scan_percentage}")
             exit(1)
     sorted_scan_percentages = sorted(args.scan_percentages)
@@ -271,6 +280,7 @@ if __name__ == "__main__":
         args.degree,
         args.num_threads,
         args.num_warmup_ops,
+        args.write_percentage,
         args.scan_range,
         args.collect_latency,
     )

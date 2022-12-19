@@ -25,22 +25,28 @@ namespace garner {
 template <typename K, typename V>
 class TxnSiloHV : public TxnCxt<K, V> {
    private:
-    // read list storing node/record -> read version in traversal order
-    struct ReadListItem {
-        bool is_record;
-        union {
-            Page<K>* page;
-            Record<K, V>* record;
-        };
+
+    struct RecordListItem {
+        Record<K, V>* record;
         uint64_t version;
-        size_t skip_to;
     };
 
-    std::vector<ReadListItem> read_list;
+    struct PageListItem {
+        Page<K>* page;
+        uint64_t version;
+        size_t record_idx_start;
+        size_t record_idx_end;
+        size_t page_skip_to;
+    };
+    
+    // record list storing record -> read version in traversal order
+    std::vector<RecordListItem> record_list;
+    std::vector<PageListItem> page_list;
 
     // still maintain a map from node/record -> index in read_list, for fast
     // lookups
-    std::unordered_map<void*, size_t> read_set;
+    std::unordered_map<Record<K, V>*, size_t> record_set;
+    std::unordered_map<Page<K>*, size_t> page_set;
 
     // auxiliary map from height -> index of last enqueued node item, used for
     // setting skip_to information during Scan execution
@@ -73,8 +79,10 @@ class TxnSiloHV : public TxnCxt<K, V> {
    public:
     TxnSiloHV(bool no_read_validation = false)
         : TxnCxt<K, V>(),
-          read_list(),
-          read_set(),
+          record_list(),
+          page_list(),
+          record_set(),
+          page_set(),
           last_read_node(),
           in_scan(false),
           write_list(),

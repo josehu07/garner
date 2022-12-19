@@ -1,6 +1,6 @@
 /build/
 /build-*/
 
-/experiment/
+/experiment*/
 
 .vscode/

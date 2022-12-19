@@ -22,8 +22,14 @@ namespace garner {
 template <typename K, typename V>
 class TxnSilo : public TxnCxt<K, V> {
    private:
+    struct RecordListItem {
+        Record<K, V>* record;
+        uint64_t version;
+    };
+
+    std::vector<RecordListItem> read_list;
     // read set storing record -> read version
-    std::map<Record<K, V>*, uint64_t> read_set;
+    std::unordered_map<Record<K, V>*, size_t> read_set;
 
     // write set storing record -> new value
     std::map<Record<K, V>*, V> write_set;
