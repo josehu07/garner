@@ -34,8 +34,8 @@ bool TxnSilo<K, V>::ExecReadRecord(Record<K, V>* record, V& value) {
             must_abort = true;
         }
     } else {
-        read_list.push_back(RecordListItem{.record = record,
-                                            .version = read_version});
+        read_list.push_back(
+            RecordListItem{.record = record, .version = read_version});
         read_set[record] = read_list.size() - 1;
     }
 

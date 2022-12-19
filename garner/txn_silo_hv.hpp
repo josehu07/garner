@@ -25,7 +25,6 @@ namespace garner {
 template <typename K, typename V>
 class TxnSiloHV : public TxnCxt<K, V> {
    private:
-
     struct RecordListItem {
         Record<K, V>* record;
         uint64_t version;
@@ -38,7 +37,7 @@ class TxnSiloHV : public TxnCxt<K, V> {
         size_t record_idx_end;
         size_t page_skip_to;
     };
-    
+
     // record list storing record -> read version in traversal order
     std::vector<RecordListItem> record_list;
     std::vector<PageListItem> page_list;

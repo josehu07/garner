@@ -35,8 +35,8 @@ bool TxnSiloHV<K, V>::ExecReadRecord(Record<K, V>* record, V& value) {
             must_abort = true;
         }
     } else {
-        record_list.push_back(RecordListItem{.record = record,
-                                             .version = read_version});
+        record_list.push_back(
+            RecordListItem{.record = record, .version = read_version});
         record_set[record] = record_list.size() - 1;
     }
 
@@ -75,11 +75,12 @@ void TxnSiloHV<K, V>::ExecReadTraverseNode(Page<K>* page) {
         // append to read list if not already in the list pushed by a previous
         // operation in the same transaction
         if (!page_set.contains(page)) {
-            page_list.push_back(PageListItem{.page = page,
-                                             .version = page->hv_ver,
-                                             .record_idx_start = record_list.size(),
-                                             .record_idx_end = 0,
-                                             .page_skip_to = 0});
+            page_list.push_back(
+                PageListItem{.page = page,
+                             .version = page->hv_ver,
+                             .record_idx_start = record_list.size(),
+                             .record_idx_end = 0,
+                             .page_skip_to = 0});
             page_set[page] = page_list.size() - 1;
             last_read_node[height] = page_list.size() - 1;
         }
@@ -190,7 +191,7 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
         if (!me_writing) {
             latched = ritem.record->latch.try_lock_shared();
             DEBUG("record latch R try_acquire %p %s",
-                    static_cast<void*>(ritem.record), latched ? "yes" : "no");
+                  static_cast<void*>(ritem.record), latched ? "yes" : "no");
             if (!latched) {
                 return false;
             }
@@ -217,33 +218,31 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
     };
 
     auto validate_page = [this](const PageListItem& pitem) {
-            // check semaphore field of tree page
-            uint64_t hv_sem = pitem.page->hv_sem;
-            if (hv_sem > 1 ||
-                (hv_sem == 1 && !write_set.contains(pitem.page))) {
-                return false;
-            }
+        // check semaphore field of tree page
+        uint64_t hv_sem = pitem.page->hv_sem;
+        if (hv_sem > 1 || (hv_sem == 1 && !write_set.contains(pitem.page))) {
+            return false;
+        }
 
-            // check if tree page version changed by any committed writer
-            if (pitem.version != pitem.page->hv_ver) {
-                return false;
-            }
+        // check if tree page version changed by any committed writer
+        if (pitem.version != pitem.page->hv_ver) {
+            return false;
+        }
 
-            return true;
+        return true;
     };
 
     if (!no_read_validation) {
-
         size_t page_idx = 0;
         size_t record_idx = 0;
 
         // iterate through all page nodes
         while (page_idx < page_list.size()) {
             auto&& pitem = page_list[page_idx];
-            
+
             // validate records between record_idx and page's start record idx
             for (; record_idx < pitem.record_idx_start; record_idx++) {
-                if (!validate_record(record_list[record_idx])){
+                if (!validate_record(record_list[record_idx])) {
                     release_all_write_latches();
                     return false;
                 }
@@ -258,19 +257,17 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
                 // go to the next page
                 // if this is a leaf page, next page will have a different start
                 // record, so everything covered by this page will be validated
-                page_idx ++;
+                page_idx++;
             }
-
         }
 
         // we are done validating all pages, validate the rest of records
-        for (; record_idx < record_list.size(); record_idx ++) {
-            if (!validate_record(record_list[record_idx])){
+        for (; record_idx < record_list.size(); record_idx++) {
+            if (!validate_record(record_list[record_idx])) {
                 release_all_write_latches();
                 return false;
             }
         }
-        
     }
 
     std::chrono::time_point<std::chrono::high_resolution_clock> end_validate_tp;

@@ -173,6 +173,8 @@ def plot_results_throughput(scan_percentages, results, output_prefix):
             label=protocol,
         )
 
+    plt.xlim((0, 100))
+    plt.ylim((0, 2.8))
     plt.ylabel("Throughput (x1000 txns/sec)")
     plt.xlabel("Scan percentage (%)")
     plt.legend()
@@ -193,8 +195,7 @@ def plot_results_latency(scan_percentages, results, output_prefix):
             results[protocol][scan_percentage]["lock_time"] for protocol in labels
         ]
         validate_times = [
-            results[protocol][scan_percentage]["validate_time"]
-            for protocol in labels
+            results[protocol][scan_percentage]["validate_time"] for protocol in labels
         ]
         commit_times = [
             results[protocol][scan_percentage]["commit_time"] for protocol in labels
@@ -235,8 +236,12 @@ if __name__ == "__main__":
     parser.add_argument("-o", "--output_prefix", dest="output_prefix", required=True)
     parser.add_argument("-d", "--degree", dest="degree", type=int, default=256)
     parser.add_argument("-t", "--num_threads", dest="num_threads", type=int, default=16)
-    parser.add_argument("-w", "--num_warmup_ops", dest="num_warmup_ops", type=int, default=50000)
-    parser.add_argument("-r", "--write_percentage", dest="write_percentage", type=int, default=10)
+    parser.add_argument(
+        "-w", "--num_warmup_ops", dest="num_warmup_ops", type=int, default=50000
+    )
+    parser.add_argument(
+        "-r", "--write_percentage", dest="write_percentage", type=int, default=10
+    )
     parser.add_argument("-s", "--scan_range", dest="scan_range", type=int, default=0)
     parser.add_argument("-l", "--latency", dest="collect_latency", action="store_true")
     parser.add_argument(
