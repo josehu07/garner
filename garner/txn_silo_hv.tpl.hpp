@@ -20,6 +20,7 @@ bool TxnSiloHV<K, V>::ExecReadRecord(Record<K, V>* record, V& value) {
 
     // if in my local write set, read from there instead
     if (write_set.contains(record)) {
+        assert(write_set[record] < write_list.size());
         assert(write_list[write_set[record]].is_record);
         value = std::get<V>(write_list[write_set[record]].height_or_value);
     } else
@@ -27,6 +28,7 @@ bool TxnSiloHV<K, V>::ExecReadRecord(Record<K, V>* record, V& value) {
 
     // insert into read set if not in it yet
     if (record_set.contains(record)) {
+        assert(record_set[record] < record_list.size());
         if (record_list[record_set[record]].version != read_version) {
             // same record read multiple times by the transaction and versions
             // already mismatch
@@ -66,9 +68,10 @@ void TxnSiloHV<K, V>::ExecReadTraverseNode(Page<K>* page) {
         // TODO: reading root page's height may not be thread-safe
         unsigned height = page->height;
         if (last_read_node.contains(height)) {
-            auto&& page_record = page_list[last_read_node[height]];
-            page_record.record_idx_end = record_list.size();
-            page_record.page_skip_to = page_list.size();
+            assert(last_read_node[height] < page_list.size());
+            auto&& pitem = page_list[last_read_node[height]];
+            pitem.record_idx_end = record_list.size();
+            pitem.page_skip_to = page_list.size();
             last_read_node.erase(height);
         }
 
@@ -109,9 +112,10 @@ void TxnSiloHV<K, V>::ExecLeaveScan() {
     in_scan = false;
     // set dangling node items' skip_to
     for (auto&& [_, idx] : last_read_node) {
-        auto&& page_record = page_list[idx];
-        page_record.record_idx_end = record_list.size();
-        page_record.page_skip_to = page_list.size();
+        assert(idx < page_list.size());
+        auto&& pitem = page_list[idx];
+        pitem.record_idx_end = record_list.size();
+        pitem.page_skip_to = page_list.size();
     }
     last_read_node.clear();
 }
@@ -242,6 +246,7 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
 
             // validate records between record_idx and page's start record idx
             for (; record_idx < pitem.record_idx_start; record_idx++) {
+                assert(record_idx < record_list.size());
                 if (!validate_record(record_list[record_idx])) {
                     release_all_write_latches();
                     return false;
@@ -250,7 +255,8 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
 
             // validate the page
             if (validate_page(pitem)) {
-                // page version is not stale, skip the child records
+                // page version is not stale, skip the children nodes & records
+                // in this subtree
                 page_idx = pitem.page_skip_to;
                 record_idx = pitem.record_idx_end;
             } else {
@@ -263,6 +269,7 @@ bool TxnSiloHV<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
 
         // we are done validating all pages, validate the rest of records
         for (; record_idx < record_list.size(); record_idx++) {
+            assert(record_idx < record_list.size());
             if (!validate_record(record_list[record_idx])) {
                 release_all_write_latches();
                 return false;
