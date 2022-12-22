@@ -26,15 +26,19 @@ bool TxnSilo<K, V>::ExecReadRecord(Record<K, V>* record, V& value) {
 
     // insert into read set if not in it yet
     if (read_set.contains(record)) {
-        if (read_set[record] != read_version) {
+        assert(read_set[record] < read_vec.size());
+        if (read_vec[read_set[record]].version != read_version) {
             // same record read multiple times by the transaction and versions
             // already mismatch
             // we could just early abort here, but for simplicity, we save
             // this decision and abort at finish time
             must_abort = true;
         }
-    } else
-        read_set[record] = read_version;
+    } else {
+        read_vec.push_back(
+            RecordListItem{.record = record, .version = read_version});
+        read_set[record] = read_vec.size() - 1;
+    }
 
     return true;
 }
@@ -78,7 +82,10 @@ bool TxnSilo<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
         *ser_order = (*ser_counter)++;
 
     // phase 2
-    for (auto&& [record, version] : read_set) {
+    for (auto&& ritem : read_vec) {
+        auto&& record = ritem.record;
+        auto&& version = ritem.version;
+
         // if possibly locked by some writer other than me, abort
         bool latched = false;
         bool me_writing = write_set.contains(record);
@@ -116,8 +123,8 @@ bool TxnSilo<K, V>::TryCommit(std::atomic<uint64_t>* ser_counter,
     // generate new version number, one greater than all versions seen by
     // this transaction
     uint64_t new_version = 0;
-    for (auto&& [record, version] : read_set)
-        if (version > new_version) new_version = version;
+    for (auto&& ritem : read_vec)
+        if (ritem.version > new_version) new_version = ritem.version;
     for (auto&& [record, _] : write_set)
         if (record->version > new_version) new_version = record->version;
     new_version++;

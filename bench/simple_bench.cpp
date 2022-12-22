@@ -58,7 +58,8 @@ static void client_thread_func(std::stop_token stop_token,
     std::uniform_int_distribution<size_t> rand_scan_idx(
         0, warmup_keys->size() - SCAN_RANGE - 1);
 
-    std::uniform_int_distribution<unsigned> rand_is_scan_txn(1, 100);
+    std::uniform_int_distribution<unsigned> rand_is_scan_txn(
+        1, SCAN_PERCENTAGE * 10 + 100 - SCAN_PERCENTAGE);
     std::uniform_int_distribution<unsigned> rand_is_write_op(
         1, 100 - SCAN_PERCENTAGE);
 
@@ -112,7 +113,9 @@ static void client_thread_func(std::stop_token stop_token,
         if (stop_token.stop_requested()) break;
 
         // generate scan only or not decision
-        bool scan_txn = (rand_is_scan_txn(gen) <= SCAN_PERCENTAGE);
+        // since scan txns contains only 1/10 as many operations, here we give
+        // more weight so that a txn is 10 times more likely to be a scan txn
+        bool scan_txn = (rand_is_scan_txn(gen) <= 10 * SCAN_PERCENTAGE);
 
         // generate number of ops for this transaction
         size_t txn_ops = scan_txn ? rand_txn_ops_scan(gen) : rand_txn_ops(gen);

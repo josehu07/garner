@@ -25,22 +25,33 @@ namespace garner {
 template <typename K, typename V>
 class TxnSiloHV : public TxnCxt<K, V> {
    private:
-    // read list storing node/record -> read version in traversal order
-    struct ReadListItem {
-        bool is_record;
-        union {
-            Page<K>* page;
-            Record<K, V>* record;
-        };
+    // we split the read_list into two vectors: one for tree nodes (pages) and
+    // the other for records, to give better memory performance
+
+    // record list storing record -> read version in traversal order
+    struct RecordListItem {
+        Record<K, V>* record;
         uint64_t version;
-        size_t skip_to;
     };
 
-    std::vector<ReadListItem> read_list;
+    std::vector<RecordListItem> record_list;
 
-    // still maintain a map from node/record -> index in read_list, for fast
-    // lookups
-    std::unordered_map<void*, size_t> read_set;
+    // page list storing node -> read version and children skipping info in
+    // traversal order
+    struct PageListItem {
+        Page<K>* page;
+        uint64_t version;
+        size_t record_idx_start;
+        size_t record_idx_end;
+        size_t page_skip_to;
+    };
+
+    std::vector<PageListItem> page_list;
+
+    // still maintain a map from node/record -> index in record_list/page_list,
+    // for fast lookups
+    std::unordered_map<Record<K, V>*, size_t> record_set;
+    std::unordered_map<Page<K>*, size_t> page_set;
 
     // auxiliary map from height -> index of last enqueued node item, used for
     // setting skip_to information during Scan execution
@@ -73,8 +84,10 @@ class TxnSiloHV : public TxnCxt<K, V> {
    public:
     TxnSiloHV(bool no_read_validation = false)
         : TxnCxt<K, V>(),
-          read_list(),
-          read_set(),
+          record_list(),
+          page_list(),
+          record_set(),
+          page_set(),
           last_read_node(),
           in_scan(false),
           write_list(),
@@ -133,7 +146,12 @@ class TxnSiloHV : public TxnCxt<K, V> {
 
     template <typename KK, typename VV>
     friend std::ostream& operator<<(
-        std::ostream& s, const typename TxnSiloHV<KK, VV>::ReadListItem& ritem);
+        std::ostream& s,
+        const typename TxnSiloHV<KK, VV>::RecordListItem& ritem);
+
+    template <typename KK, typename VV>
+    friend std::ostream& operator<<(
+        std::ostream& s, const typename TxnSiloHV<KK, VV>::PageListItem& pitem);
 
     template <typename KK, typename VV>
     friend std::ostream& operator<<(
@@ -146,14 +164,19 @@ class TxnSiloHV : public TxnCxt<K, V> {
 };
 
 template <typename K, typename V>
+std::ostream& operator<<(
+    std::ostream& s, const typename TxnSiloHV<K, V>::RecordListItem& ritem) {
+    s << "RLItem{record=" << ritem.record << ",version=" << ritem.version
+      << "}";
+    return s;
+}
+
+template <typename K, typename V>
 std::ostream& operator<<(std::ostream& s,
-                         const typename TxnSiloHV<K, V>::ReadListItem& ritem) {
-    s << "RLItem{is_record=" << ritem.is_record;
-    if (ritem.is_record)
-        s << ",record=" << ritem.record;
-    else
-        s << ",page=" << ritem.page;
-    s << ",version=" << ritem.version << ",skip_to=" << ritem.skip_to << "}";
+                         const typename TxnSiloHV<K, V>::PageListItem& pitem) {
+    s << "PLItem{page=" << pitem.page << ",version=" << pitem.version
+      << ",record_idx_start=" << pitem.record_idx_start
+      << ",record_idx_end=" << pitem.record_idx_end << "}";
     return s;
 }
 
@@ -173,8 +196,10 @@ std::ostream& operator<<(std::ostream& s,
 
 template <typename K, typename V>
 std::ostream& operator<<(std::ostream& s, const TxnSiloHV<K, V>& txn) {
-    s << "TxnSiloHV{read_list=[";
-    for (auto&& ritem : txn.read_list) s << ritem << ",";
+    s << "TxnSiloHV{record_list=[";
+    for (auto&& ritem : txn.record_list) s << ritem << ",";
+    s << "],page_list=[";
+    for (auto&& pitem : txn.page_list) s << pitem << ",";
     s << "],write_list=[";
     for (auto&& witem : txn.write_list) s << witem << ",";
     s << "],must_abort=" << txn.must_abort

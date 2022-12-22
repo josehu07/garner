@@ -22,8 +22,18 @@ namespace garner {
 template <typename K, typename V>
 class TxnSilo : public TxnCxt<K, V> {
    private:
-    // read set storing record -> read version
-    std::map<Record<K, V>*, uint64_t> read_set;
+    // read list storing record -> read version
+    // using an std::vector of items to speed up the sequential loop of
+    // generating new version number
+    struct RecordListItem {
+        Record<K, V>* record;
+        uint64_t version;
+    };
+
+    std::vector<RecordListItem> read_vec;
+
+    // read set storing record -> index in read_vec
+    std::unordered_map<Record<K, V>*, size_t> read_set;
 
     // write set storing record -> new value
     std::map<Record<K, V>*, V> write_set;
@@ -73,14 +83,26 @@ class TxnSilo : public TxnCxt<K, V> {
                    uint64_t* ser_order = nullptr, TxnStats* stats = nullptr);
 
     template <typename KK, typename VV>
+    friend std::ostream& operator<<(
+        std::ostream& s, const typename TxnSilo<KK, VV>::RecordListItem& ritem);
+
+    template <typename KK, typename VV>
     friend std::ostream& operator<<(std::ostream& s,
                                     const TxnSilo<KK, VV>& txn);
 };
 
-template <typename K, typename VV>
-std::ostream& operator<<(std::ostream& s, const TxnSilo<K, VV>& txn) {
-    s << "TxnSilo{read_set=[";
-    for (auto&& [r, ver] : txn.read_set) s << "(" << r << "-" << ver << "),";
+template <typename K, typename V>
+std::ostream& operator<<(std::ostream& s,
+                         const typename TxnSilo<K, V>::RecordListItem& ritem) {
+    s << "RLItem{record=" << ritem.record << ",version=" << ritem.version
+      << "}";
+    return s;
+}
+
+template <typename K, typename V>
+std::ostream& operator<<(std::ostream& s, const TxnSilo<K, V>& txn) {
+    s << "TxnSilo{read_vec=[";
+    for (auto&& [r, ver] : txn.read_vec) s << "(" << r << "-" << ver << "),";
     s << "],write_set=[";
     for (auto&& [r, val] : txn.write_set) s << "(" << r << "-" << val << "),";
     s << "],must_abort=" << txn.must_abort << "}";
